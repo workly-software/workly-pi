@@ -1,0 +1,49 @@
+name: Pipeline de CI do Workly
+
+on:
+  push:
+    branches: [main, master, 'codex/**']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Criar configuração temporária
+        run: node scripts/setup-docker.cjs
+      - name: Validar Compose e construir imagens
+        run: |
+          docker compose config --quiet
+          docker compose --profile test build
+      - name: Testar frontend
+        run: docker compose --profile test run --rm frontend-test
+      - name: Testar backend com MongoDB e Database Tools
+        run: docker compose --profile test run --rm backend-test
+      - name: Subir aplicação e aguardar saúde dos serviços
+        run: docker compose up -d --wait --wait-timeout 180
+      - name: Verificar persistência após recriar containers
+        run: node scripts/test-docker-persistence.mjs
+      - name: Verificar aplicação publicada localmente
+        run: node scripts/smoke-docker.mjs
+      - name: Diagnóstico
+        if: always()
+        run: |
+          docker compose --profile test ps -a
+          docker compose --profile test logs --no-color --tail=100
+      - name: Encerrar ambiente temporário
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans

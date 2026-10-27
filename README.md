@@ -474,6 +474,84 @@ A aplicação foi desenvolvida inicialmente como uma **página estática**, inco
 
 ### Como rodar
 
+#### Com Docker Desktop (roteiro de Docker Compose e GitHub Actions)
+
+No Windows, abra o Docker Desktop com o mecanismo WSL 2 e containers Linux.
+Na raiz do repositório, gere os segredos locais uma única vez (Node.js 24):
+
+```bash
+node scripts/setup-docker.cjs
+docker compose up --build -d --wait
+```
+
+Abra **http://localhost:8080**. O Compose inicia três serviços: `web` (React compilado
+e servido pelo Nginx), `backend` (API Express em Node.js 24) e `db` (MongoDB 8.0).
+Somente o site publica uma porta, limitada à própria máquina; `/api` e `/uploads`
+são encaminhados pelo Nginx à API. O banco é acessado pelo nome `db` na rede Docker,
+com autenticação. API e banco aguardam verificações de saúde antes de liberar o site.
+
+O `.env` da raiz é exclusivo do Compose, ignorado pelo Git e pelo build. O gerador
+preserva qualquer `.env` existente, inclusive os arquivos de configuração em
+`backend` e `frontend`. Para configuração manual, copie `.env.example` da raiz e
+preencha `MONGO_ROOT_PASSWORD` e `JWT_SECRET` com valores longos e aleatórios.
+Use senha hexadecimal e usuário alfanumérico para a URI MongoDB. Para outra porta,
+ajuste `WEB_PORT` no `.env` e execute novamente `docker compose up -d --wait`.
+
+```bash
+docker compose ps -a
+docker compose logs -f
+docker compose down
+```
+
+`down` remove containers e rede, preservando os volumes `mongo-data` (banco) e
+`uploads` (fotos). Na primeira inicialização, `init.js` prepara a categoria Design
+e a API completa as categorias padrão. Não são criadas contas ou serviços de
+demonstração: `AUTO_SEED=false`. O script de inicialização do MongoDB só roda em
+volume vazio; trocar a senha no `.env` não altera credenciais já gravadas no banco.
+Não use `down --volumes` no ambiente que contém seus dados: esse parâmetro apaga
+os volumes. Esses volumes Docker são separados do MongoDB e dos uploads locais
+usados na execução sem containers.
+
+Para executar as verificações em containers:
+
+```bash
+docker compose --profile test build
+docker compose --profile test run --rm frontend-test
+docker compose --profile test run --rm backend-test
+docker compose up -d --wait
+node scripts/test-docker-persistence.mjs
+node scripts/smoke-docker.mjs
+```
+
+O backend de teste utiliza um MongoDB descartável separado, sem porta publicada,
+com Database Tools instaladas para testar backup/restore. A ausência do banco
+gera falha (`WORKLY_EXIGIR_MONGO=1`). O build do site verifica também os arquivos
+estáticos. O smoke verifica rotas React, JavaScript, imagens, uploads e o acesso
+ao banco pela API através do Nginx. `WORKLY_URL` permite testar uma porta diferente.
+O teste de persistência grava marcadores próprios, executa `down` sem apagar
+volumes, recria os containers e confere banco e uploads antes de remover os
+marcadores. Ele interrompe o site brevemente; execute-o em seu ambiente de teste.
+
+O workflow `.github/workflows/ci.yml` reproduz build, testes e smoke no Ubuntu,
+em pushes para `main`, `master`, `codex/**`, Pull Requests para `main`/`master` e
+execução manual. Ele usa segredos temporários e remove apenas seu ambiente
+descartável ao terminar, inclusive em caso de falha. A execução na nuvem ocorre
+depois de enviar a branch ao GitHub; não há deploy ou merge automático.
+
+Esta implementação adapta a opção MongoDB do roteiro à aplicação real: mantém
+Dockerfile na raiz, `init.js`, `docker-compose.yml`, volumes e CI, substitui o
+`echo` pelo servidor HTTP e inclui o frontend. Node.js 24 acompanha o requisito
+atual do projeto; MongoDB 8.0 e `actions/checkout@v6` atualizam os exemplos da aula.
+`depends_on` usa `service_healthy` para aguardar disponibilidade, além da ordem de
+inicialização. A main não precisa ser modificada para testar a branch.
+
+Resultados locais e limitações: [validação da dockerização](docs/docker-validacao.md).
+Referências: [ordem e saúde dos serviços no Compose](https://docs.docker.com/compose/how-tos/startup-order/),
+[imagem oficial do MongoDB](https://hub.docker.com/_/mongo) e
+[CI no GitHub Actions](https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs).
+
+#### Sem Docker
+
 É necessário ter **Node.js 24, npm e MongoDB** instalados, com o MongoDB em execução. A versão atual usa React no frontend e Express com MongoDB no backend.
 
 **1. Backend**

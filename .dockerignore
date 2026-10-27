@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.local
+**/*.log
+backend/uploads
+backend/backups
+.codex
+.agents
+.claude
+.maestro
+.impeccable
