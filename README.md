@@ -545,7 +545,6 @@ atual do projeto; MongoDB 8.0 e `actions/checkout@v6` atualizam os exemplos da a
 `depends_on` usa `service_healthy` para aguardar disponibilidade, além da ordem de
 inicialização. A main não precisa ser modificada para testar a branch.
 
-Resultados locais e limitações: [validação da dockerização](docs/docker-validacao.md).
 Referências: [ordem e saúde dos serviços no Compose](https://docs.docker.com/compose/how-tos/startup-order/),
 [imagem oficial do MongoDB](https://hub.docker.com/_/mongo) e
 [CI no GitHub Actions](https://docs.github.com/en/actions/tutorials/build-and-test-code/nodejs).
