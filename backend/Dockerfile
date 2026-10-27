@@ -1,18 +1,18 @@
 FROM node:24-alpine AS dependencies
 WORKDIR /app/backend
-COPY backend/package*.json ./
+COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 FROM dependencies AS test
 RUN apk add --no-cache mongodb-tools
-COPY backend/ ./
+COPY . ./
 RUN npm run prepare:assets
 CMD ["sh", "-c", "export JWT_SECRET=$(node -e \"process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))\"); exec npm test"]
 
 FROM dependencies AS runtime
 ENV NODE_ENV=production
-COPY --chown=node:node backend/src ./src
-COPY --chown=node:node backend/scripts ./scripts
+COPY --chown=node:node src ./src
+COPY --chown=node:node scripts ./scripts
 RUN npm run prepare:assets && chown -R node:node /app/backend/uploads
 USER node
 EXPOSE 3000
