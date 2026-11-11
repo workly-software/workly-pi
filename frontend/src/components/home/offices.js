@@ -1,6 +1,5 @@
 import { categories } from '../../services/catalogService';
 
-// Editorial photographs per category (sources in assets/img/oficios/CREDITS.md).
 const photos = {
   1: 'design',
   2: 'programacao',
@@ -28,13 +27,11 @@ const plain = (text) =>
     .toLowerCase()
     .trim();
 
-// Services carry the category name, not our local id, so match on the name.
 export function officeFor(service) {
   const name = plain(service?.nomeCategoria);
   return offices.find((office) => plain(office.name) === name || plain(office.label) === name);
 }
 
-// Rotate each category's covers in list order, so neighbours never share a photo.
 export function assignCovers(services) {
   const seen = {};
   return services.map((service) => {
@@ -46,7 +43,6 @@ export function assignCovers(services) {
   });
 }
 
-// Own image when the service has one; otherwise a category cover picked stably from its id.
 export function serviceImage(item, fallback) {
   const own = item?.imagemServico;
   if (own && !own.includes('servico_padrao')) return own;

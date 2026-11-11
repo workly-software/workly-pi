@@ -1,4 +1,3 @@
-// instala os índices de usuário, contrato e avaliação sem subir a API (útil em deploy): node src/scripts/indices.js
 const mongoose = require('mongoose');
 const connectDatabase = require('../config/db');
 const { garantirIndicesContrato, relatarProblemaIndice } = require('../models/Contrato');

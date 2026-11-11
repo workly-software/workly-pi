@@ -26,7 +26,6 @@ export function LoadingState({
   );
 }
 
-// Domain copy and page-specific presentation belong to the caller.
 export function ErrorState({ children, className = '' }) {
   return (
     <div role="alert" className={`min-w-0 ${className}`}>
@@ -42,7 +41,6 @@ export function EmptyState({ children, className = '' }) {
   );
 }
 
-// Full-width empty/error panel for grids; the action keeps the visitor moving.
 export function StatePanel({ error = false, icon, title, message, action, className = '' }) {
   const Wrapper = error ? ErrorState : EmptyState;
   return (

@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 const ambiente = require('./ambiente');
 const Categoria = require('../models/Categoria');
 
-// categorias padrão usadas nas páginas do projeto.
 const categoriasPadrao = [
   { legacyId: 1, nome: 'Design', slug: 'design' },
   { legacyId: 2, nome: 'Programação', slug: 'programacao' },

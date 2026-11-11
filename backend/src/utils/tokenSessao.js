@@ -3,11 +3,8 @@ const jwt = require('jsonwebtoken');
 const ambiente = require('../config/ambiente');
 
 const ALGORITMO = 'HS256';
-// a sessão vale 24 horas; o cookie expira junto com o token.
 const DURACAO_SESSAO_MS = 24 * 60 * 60 * 1000;
 
-// tokens sem "sv" (emitidos antes desta versão) são tratados como versão 0.
-// "jti" identifica a sessão, para o logout revogar só este token sem derrubar os outros aparelhos.
 function emitirToken(usuario) {
   return jwt.sign(
     {

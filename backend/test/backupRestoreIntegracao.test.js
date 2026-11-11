@@ -1,5 +1,3 @@
-// Etapa 4: ida e volta real com mongodump/mongorestore, só em bases workly_test_* e pastas temporárias.
-// Sem as ferramentas instaladas os testes são pulados com o motivo; nada é dado como aprovado sem rodar.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fsp = require('node:fs/promises');
@@ -38,7 +36,6 @@ test.after(async () => {
   for (const { name } of databases) if (name.startsWith(BASE)) await cliente.db(name).dropDatabase();
   await cliente.close();
 });
-// t.skip() só marca o teste: devolve true para o corpo parar de verdade.
 function pular(t) {
   if (faltando.length) {
     t.skip(`${faltando.join(' e ')} não encontrado(s) no PATH: instale o MongoDB Database Tools para rodar a ida e volta`);

@@ -55,7 +55,6 @@ test('a late 401 from an old session does not clear a new login', async (t) => {
       })
   );
   const request = apiRequest('/api/contratos/meus');
-  // M-04/L-01: the marker of the newer login is what protects it now (the token is an HttpOnly cookie).
   data.set('sessao', 'new-login');
   finish(Response.json({ mensagem: 'Token inválido ou expirado.' }, { status: 401 }));
   await assert.rejects(request, { status: 401 });

@@ -4,7 +4,6 @@ const auth = require('../middleware/autenticacaoMiddleware');
 
 const router = express.Router();
 
-// todas as rotas exigem autenticação — notificações são pessoais.
 router.get('/', auth, controller.listar);
 
 router.get('/nao-lidas', auth, controller.contarNaoLidas);

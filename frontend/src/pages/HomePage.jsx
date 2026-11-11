@@ -14,7 +14,6 @@ import { LoadingState, StatePanel } from '../components/ui/Feedback';
 import Button from '../components/ui/Button';
 import { featuredServices } from '../services/catalogService';
 
-// One grid for header, content and footer: 1280px, 40px gutters, 12 columns.
 const container = 'mx-auto w-full max-w-[1280px] px-10 legacy-max-720:px-6';
 const display =
   "font-workly-display font-semibold text-workly-ink-warm [font-variation-settings:'opsz'_96] dark:text-[#ecebe5]";
@@ -68,7 +67,6 @@ export default function HomePage() {
       footerTone="paper"
     >
       <main className={`${pageGround} text-workly-ink-warm dark:text-[#ecebe5]`}>
-        {/* Headline and search beside a quiet mosaic of real craft; categories follow as one compact strip. */}
         <section className={`${container} grid grid-cols-12 items-center gap-x-6 gap-y-10 py-14 lg:py-16 legacy-max-480:py-10`}>
           <div className="col-span-12 lg:col-span-6">
             <h1

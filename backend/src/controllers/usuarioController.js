@@ -24,7 +24,6 @@ const { emitirToken } = require('../utils/tokenSessao');
 const { definirCookieSessao, limparCookieSessao } = require('../utils/cookieSessao');
 const { excluirConta } = require('../services/contaService');
 
-// serviços retirados não aparecem em perfis, dashboards nem contagens.
 const PUBLICADOS = { removido: { $ne: true } };
 
 function ehArquivoPadrao(caminho = '') {
@@ -513,9 +512,6 @@ exports.buscarPerfilPublico = async (req, res) => {
   }
 };
 
-// troca de e-mail: confere a senha atual, grava condicionada à versão da sessão (duas trocas simultâneas
-// não passam juntas) e incrementa a versão, derrubando os outros tokens; esta sessão recebe um token novo.
-// senha errada responde 403, não 401, porque o frontend trata 401 nesta rota como sessão expirada.
 async function trocarEmail(req, res, atual, campos) {
   const senhaAtual = obterCampo(req.body, ['senhaAtual', 'currentPassword']);
   if (typeof senhaAtual !== 'string' || !senhaAtual) {
@@ -528,7 +524,6 @@ async function trocarEmail(req, res, atual, campos) {
   const senhaCorreta = await bcrypt.compare(senhaAtual, atual.senha).catch(() => false);
   if (!senhaCorreta) return erro(res, 403, 'Senha atual incorreta.');
 
-  // a checagem vem depois da senha: sem ela, a rota não confirma se um e-mail já existe.
   const emUso = await Usuario.exists({ email: campos.email, _id: { $ne: atual._id } });
   if (emUso) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
 
@@ -553,8 +548,6 @@ async function trocarEmail(req, res, atual, campos) {
   });
 }
 
-// salva dados normais do perfil.
-// tipo de conta não entra aqui porque muda permissões e tem rota própria.
 exports.atualizarPerfil = async (req, res) => {
   try {
     const { campos, erro: mensagemInvalida } = validarAtualizacaoPerfil(req.body);
@@ -563,8 +556,6 @@ exports.atualizarPerfil = async (req, res) => {
     const atual = await Usuario.findById(req.user.id_usuario).select('email senha versaoSessao');
     if (!atual) return erro(res, 404, 'Usuário não encontrado.');
 
-    // o e-mail é a credencial de login: trocá-lo exige a senha atual e encerra as outras sessões.
-    // reenviar o mesmo e-mail (o formulário sempre manda o campo) não exige nada.
     if (campos.email && campos.email !== atual.email) {
       return trocarEmail(req, res, atual, campos);
     }
@@ -582,7 +573,6 @@ exports.atualizarPerfil = async (req, res) => {
       user: mapUsuario(req, usuario)
     });
   } catch (error) {
-    // corrida entre a verificação acima e o salvamento ainda cai no índice único.
     if (error?.code === 11000 && (error.keyPattern?.email || error.keyValue?.email)) {
       return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
     }
@@ -594,8 +584,6 @@ exports.atualizarPerfil = async (req, res) => {
   }
 };
 
-// mudança de tipo de conta é separada do perfil comum.
-// isso impede trocar freelancer/contratante sem passar pelas regras de negócio.
 exports.alterarTipoConta = async (req, res) => {
   try {
     const usuario = await Usuario.findById(req.user.id_usuario);
@@ -641,7 +629,6 @@ exports.alterarTipoConta = async (req, res) => {
     const servicosAtivos = await Servico.countDocuments({ freelancer: usuario._id, ...PUBLICADOS });
     const contratosAtivos = await Contrato.countDocuments({
       freelancer: usuario._id,
-      // inclui "entregue": uma entrega aguardando confirmação ou ajuste ainda é um contrato ativo.
       status: { $in: Contrato.STATUS_ATIVOS }
     });
 
@@ -702,7 +689,6 @@ exports.atualizarFoto = async (req, res) => {
   }
 };
 
-// troca de senha do usuário logado. aqui a gente confere a senha antiga antes de salvar a nova.
 exports.atualizarSenha = async (req, res) => {
   try {
     const senhaAtual = obterCampo(req.body, ['senhaAtual', 'currentPassword']);
@@ -748,7 +734,6 @@ exports.atualizarSenha = async (req, res) => {
     );
     if (!atualizado) return erro(res, 409, 'Suas credenciais foram atualizadas durante esta operação. Entre novamente.');
 
-    // as outras sessões caíram com a nova versão; esta recebe um cookie novo e continua conectada.
     definirCookieSessao(req, res, emitirToken(atualizado));
     return sucesso(res, 200, 'Senha atualizada com sucesso!', null, {
       user: mapUsuario(req, atualizado)
@@ -759,8 +744,6 @@ exports.atualizarSenha = async (req, res) => {
   }
 };
 
-// exclui a conta por anonimização (regra técnica do projeto): exige a senha atual, bloqueia com contratos
-// ativos e preserva contratos encerrados, avaliações e mensagens que compõem o histórico da outra parte.
 exports.excluirPerfil = async (req, res) => {
   try {
     const senhaAtual = obterCampo(req.body || {}, ['senhaAtual', 'senha', 'currentPassword']);

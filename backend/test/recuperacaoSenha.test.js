@@ -1,6 +1,3 @@
-// Etapa 3: recuperação de senha local, com banco descartável e servidor HTTP real.
-// O limite por IP é ampliado só neste arquivo para os cenários caberem numa janela; o limite padrão
-// é testado em recuperacaoSenhaLimite.test.js, que roda em outro processo.
 process.env.RECUPERACAO_SENHA_LIMITE_IP = '1000';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,10 +16,8 @@ const pular = (t) => (!amb ? t.skip('MongoDB local indisponível') : false);
 const SOLICITAR = '/api/autenticacao/recuperar-senha';
 const REDEFINIR = '/api/autenticacao/redefinir-senha';
 const sha256 = (valor) => crypto.createHash('sha256').update(valor).digest('hex');
-// leitura direta da coleção: o select: false do model não pode esconder um token que ainda exista.
 const noBanco = (id) => Usuario.collection.findOne({ _id: id });
 
-// liga o canal de desenvolvimento (as duas condições) e captura o que vai para o console.
 function ambienteDeTeste(t, { nodeEnv, devLink }) {
   const anterior = { NODE_ENV: process.env.NODE_ENV, PASSWORD_RESET_DEV_LINK: process.env.PASSWORD_RESET_DEV_LINK };
   const definir = (chave, valor) => (valor === undefined ? delete process.env[chave] : (process.env[chave] = valor));
@@ -40,7 +35,6 @@ function ambienteDeTeste(t, { nodeEnv, devLink }) {
 }
 const modoDev = (t) => ambienteDeTeste(t, { nodeEnv: 'development', devLink: 'console' });
 const tokenDoLog = (registros) => {
-  // o token vai no fragmento do link, que o navegador não envia ao servidor
   const linhas = registros.filter((linha) => linha.includes('/redefinir-senha#token='));
   return linhas.length ? linhas.at(-1).match(/token=([a-f0-9]{64})/)[1] : null;
 };
@@ -71,7 +65,6 @@ test('resposta idêntica para e-mail existente e inexistente; só o hash fica no
   assert.ok(!JSON.stringify(salvo).includes(token), 'o token puro não é gravado');
   const validade = salvo.redefinicaoSenha.expiraEm.getTime() - Date.now();
   assert.ok(validade > 29 * 60 * 1000 && validade <= 30 * 60 * 1000);
-  // formatos estranhos recebem a mesma resposta, sem erro
   assert.deepEqual(await amb.chamar('POST', SOLICITAR, undefined, { email: { $ne: '' } }), existente);
 });
 
@@ -146,7 +139,6 @@ test('limite por e-mail na solicitação', async (t) => {
   const respostas = [];
   for (let i = 0; i < 6; i += 1) respostas.push(await amb.chamar('POST', SOLICITAR, undefined, corpo));
   assert.deepEqual(respostas.map((r) => r.status), [503, 503, 503, 503, 503, 429]);
-  // outro e-mail continua liberado
   assert.equal((await amb.chamar('POST', SOLICITAR, undefined, { email: 'outro-email@teste.local' })).status, 503);
 });
 

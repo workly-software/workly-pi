@@ -24,7 +24,6 @@ exports.listar = async (req, res) => {
       res,
       200,
       'Favoritos carregados.',
-      // favoritos de serviços retirados ou apagados em versões antigas não aparecem.
       favoritos.filter((f) => f.servico && !f.servico.removido).map((f) => mapFavorito(req, f))
     );
   } catch (error) {
@@ -59,7 +58,6 @@ exports.criar = async (req, res) => {
     const servico = await Servico.findById(servicoId);
     if (!servico || servico.removido) return erro(res, 404, 'Serviço não encontrado.');
 
-    // upsert garante que clicar duas vezes não duplica o favorito.
     await Favorito.updateOne(
       { usuario: userId, servico: servicoId },
       { usuario: userId, servico: servicoId },

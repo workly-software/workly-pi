@@ -10,7 +10,6 @@ const navLinks = [
 const iconButton =
   'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-workly-ink-warm/80 transition-[background-color,color,transform] duration-150 ease-workly-out hover:bg-workly-primary-tint hover:text-workly-primary-ink motion-safe:active:scale-[0.95] dark:text-[#d6d1c4] dark:hover:bg-workly-dark-accent/10 dark:hover:text-workly-dark-accent';
 
-// Visitor navbar shared by the catalog pages and cadastro.
 export default function AuthHeader({
   dark,
   rightSlot,

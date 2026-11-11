@@ -49,7 +49,6 @@ export default function ContractsPage() {
       active = false;
     };
   }, [load, params]);
-  // Arriving from a confirmation with ?contrato= brings that row into view and marks it briefly.
   const focusId = params.get('contrato');
   useEffect(() => {
     if (!focusId || !items?.length) return;
@@ -60,7 +59,6 @@ export default function ContractsPage() {
     const timer = setTimeout(() => row.removeAttribute('data-highlight'), 2400);
     return () => clearTimeout(timer);
   }, [focusId, items]);
-  // resolves true when the action was applied, so inline forms know when to clear.
   async function action(id, name, body) {
     try {
       const result = await contractAction(id, name, body);
@@ -69,7 +67,6 @@ export default function ContractsPage() {
       return true;
     } catch (error) {
       toast(error.message);
-      // another action changed this contract first: show the current state instead of the stale card.
       if ([403, 409].includes(error.status) || (error.status === 400 && !body)) await load();
       return false;
     }

@@ -1,11 +1,7 @@
 const ambiente = require('../config/ambiente');
 const { DURACAO_SESSAO_MS } = require('./tokenSessao');
 
-// o token da sessão do navegador fica num cookie HttpOnly: scripts da página não conseguem lê-lo.
-// SameSite=Strict e Path=/api: o navegador só o envia nas chamadas da própria aplicação à API.
 const NOME_COOKIE = 'workly_sessao';
-// requisições autenticadas por cookie precisam deste cabeçalho. Outro site não consegue enviá-lo
-// sem passar pelo CORS, que só libera o frontend configurado: é a proteção contra CSRF.
 const CABECALHO_APLICATIVO = 'x-workly-requisicao';
 
 function opcoesCookie(req) {
@@ -13,7 +9,6 @@ function opcoesCookie(req) {
     httpOnly: true,
     sameSite: 'strict',
     path: '/api',
-    // COOKIE_SECURE=true força Secure (produção com HTTPS); sem a variável, segue o protocolo da requisição.
     secure: ambiente.cookieSeguro ?? req.secure
   };
 }

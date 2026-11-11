@@ -1,4 +1,3 @@
-// Bloco 2: contratos duplicados (A2) e transições concorrentes (A3) com requisições HTTP reais.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -85,8 +84,6 @@ async function contratoEm(status, extra = {}) {
   return Contrato.create({ cliente: cliente._id, freelancer: freelancer._id, servico: servico._id, preco: 200, status, tipoContratacao: 'combinar', ...extra });
 }
 
-// a perdedora recebe 409 se a corrida acontece entre leitura e gravação, ou 400 se a outra ação
-// terminou antes da leitura (403 no cancelamento, que já usava esse código). Em todos os casos o estado vencedor nunca é sobrescrito.
 const perdeu = (resposta) => [400, 403, 409].includes(resposta.status);
 
 test('cancelar contra iniciar: uma vence, a outra é recusada, e só a vencedora notifica', async (t) => {

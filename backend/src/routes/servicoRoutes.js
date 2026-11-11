@@ -5,7 +5,6 @@ const { uploadServico } = require('../middleware/uploadArquivoMiddleware');
 
 const router = express.Router();
 
-// listagem, filtro, criação e detalhe do serviço.
 router.get('/', controller.listarTodos);
 
 router.get('/categoria/:id', controller.buscarPorCategoria);

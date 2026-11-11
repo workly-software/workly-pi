@@ -14,7 +14,6 @@ export default function MessageCompose({ direct = false, text, setText, busy, on
       }}
       className="border-t border-workly-rule bg-workly-card p-3 sm:p-4"
     >
-      {/* Field and send button share one frame so the composer reads as a single control. */}
       <div className="flex items-end gap-2 rounded-lg border border-workly-rule bg-workly-paper p-1.5 transition-[border-color,box-shadow] focus-within:border-workly-forest focus-within:shadow-[0_0_0_3px_rgba(14,59,44,0.14)] dark:focus-within:border-workly-dark-accent">
         <textarea
           id={direct ? 'chatText' : 'messageText'}

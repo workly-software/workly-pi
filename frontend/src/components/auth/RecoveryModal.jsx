@@ -5,8 +5,6 @@ import AuthField from './AuthField';
 import { submitStyles } from './authPresentation';
 import { requestPasswordReset } from '../../services/authService';
 
-// The server answers the same way whether or not the e-mail exists, and never says an e-mail was sent.
-// When recovery is unavailable (no delivery channel configured) it answers 503 and we say so plainly.
 export default function RecoveryModal({ onClose, opener }) {
   const dialog = useRef(null);
   const backButton = useRef(null);

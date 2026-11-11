@@ -7,7 +7,6 @@ import { panel, emptyPanel } from './ProfileHeader';
 import { salesConfig, revenueConfig, viewsConfig } from './profileChartConfig';
 import { buttonStyles } from '../ui/Button';
 
-// Charts read the surrounding theme so ticks, legends and grid stay legible on both grounds.
 function themed(config, dark) {
   const ink = dark ? '#a3ada7' : '#5e6862';
   const grid = dark ? 'rgba(236,235,229,0.08)' : 'rgba(22,33,27,0.08)';

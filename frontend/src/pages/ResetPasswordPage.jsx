@@ -16,12 +16,9 @@ import logo from '../../assets/img/logo.png';
 const notice = 'mb-6 rounded-md px-3.5 py-3 text-sm leading-relaxed';
 const warning = 'bg-[#fdf3e2] text-[#8a5000] dark:bg-[#f2c14e]/15 dark:text-[#f2c14e]';
 
-// Opened from the reset link (#token=...). The token is read once into memory and removed from the URL;
-// it only goes back to the API and is never stored. Reloading without it shows the invalid-link state.
 export default function ResetPasswordPage() {
   const [token] = useState(() => takeResetToken());
   useEffect(() => {
-    // no Referer at all while this page is open, as a second guard for the token.
     const meta = document.createElement('meta');
     meta.name = 'referrer';
     meta.content = 'no-referrer';

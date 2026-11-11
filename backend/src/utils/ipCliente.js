@@ -1,10 +1,5 @@
 const net = require('net');
 
-// lê TRUST_PROXY: lista de endereços, sub-redes ou presets do Express (loopback, linklocal, uniquelocal)
-// dos proxies que podem informar o IP do cliente em X-Forwarded-For.
-// Vazio ou "false" desliga a confiança (acesso direto: o cabeçalho é ignorado).
-// "true" e contagem de saltos são recusados: confiariam em qualquer remetente e deixariam o cliente
-// escolher o próprio IP, o que anula os limites de tentativas.
 function lerConfiancaProxy(bruto) {
   const texto = typeof bruto === 'string' ? bruto.trim() : '';
   if (!texto || texto.toLowerCase() === 'false') return false;
@@ -19,8 +14,6 @@ function lerConfiancaProxy(bruto) {
     .filter(Boolean);
 }
 
-// chave do limite de tentativas: IPv4 mapeado em IPv6 vira IPv4 e IPv6 é agrupado por /64,
-// porque um único cliente IPv6 costuma controlar a rede /64 inteira.
 function chaveIpCliente(ip) {
   const endereco = String(ip || '').split('%')[0];
   if (net.isIPv4(endereco)) return endereco;

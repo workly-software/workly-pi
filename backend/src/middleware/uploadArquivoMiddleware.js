@@ -7,7 +7,6 @@ const { erro } = require('../utils/apiResponse');
 const TAMANHO_MAXIMO = 5 * 1024 * 1024;
 const TIPOS_DECLARADOS = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/jpg']);
 
-// identifica a imagem pelos bytes iniciais; mimetype e nome vêm do cliente e não são confiáveis.
 function detectarImagem(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
@@ -22,7 +21,6 @@ function criarUpload(pasta, prefixo) {
   const destino = path.resolve(__dirname, `../../uploads/${pasta}`);
   fs.mkdirSync(destino, { recursive: true });
 
-  // o arquivo fica em memória até ser validado, então um upload recusado não deixa resíduo no disco.
   const receber = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TAMANHO_MAXIMO, files: 1 },

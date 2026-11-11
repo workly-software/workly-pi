@@ -3,8 +3,6 @@ import FeaturedCard from '../home/FeaturedCard';
 import { officeFor } from '../home/offices';
 import Button from '../ui/Button';
 
-// Catalog cards share the home anatomy. Lists pass `cover` from assignCovers so
-// neighbours differ; single cards fall back to a stable pick from the service id.
 function stableCover(service) {
   const office = officeFor(service);
   if (!office) return undefined;

@@ -1,15 +1,3 @@
-// Backup e restore do MongoDB com as ferramentas oficiais (mongodump/mongorestore) e cópia dos uploads.
-// Backup e restauração com validação, confirmação e preservação de cópias anteriores.
-//
-// Regras principais:
-// - a URI (com usuário e senha) nunca vai nos argumentos dos processos nem nos logs: vai num arquivo YAML
-//   temporário passado com --config, criado com permissão restrita e apagado no finally;
-// - os processos são iniciados sem shell, com um array de argumentos;
-// - o restore é destrutivo e só acontece com: base de teste ou liberada por variável, --confirmar <nome da base>,
-//   --manutencao-confirmada, manifesto íntegro e nenhuma conta excluída depois do backup;
-// - o restore passa primeiro por uma base temporária, que é conferida antes de qualquer troca no destino;
-// - a troca de coleções NÃO é atômica: as coleções atuais são renomeadas para <nome>_pre_restore_<carimbo>
-//   e nunca são apagadas automaticamente.
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -28,13 +16,10 @@ const PASTA_BACKUPS_PADRAO = path.resolve(__dirname, '../../backups');
 const CONFIRMACAO_REINTRODUCAO = 'REINTRODUZIR CONTAS EXCLUIDAS';
 const VARIAVEL_LIBERACAO = 'WORKLY_RESTORE_BASE_LIBERADA';
 
-// limites do buffer de linha da saída das ferramentas (veja executarFerramenta).
 const LIMITE_LINHA = 64 * 1024;
 const AVISO_LINHA_LONGA = '[saída da ferramenta omitida: linha acima de 64 KB]';
 
 class ErroBackup extends Error {}
-
-// ---------- URI e mascaramento ----------
 
 function analisarUri(uri) {
   const m = /^(mongodb(?:\+srv)?:\/\/)(?:([^@/]*)@)?([^/?]+)(?:\/([^?]*))?(?:\?(.*))?$/.exec(String(uri || '').trim());
@@ -51,8 +36,6 @@ function analisarUri(uri) {
   };
 }
 
-// URI sem o nome da base, para as ferramentas: a base vai em --db/--nsInclude. Com credenciais e sem authSource,
-// a base do caminho era a base de autenticação, então ela vira authSource para não mudar o login.
 function uriSemBase(info) {
   const parametros = new URLSearchParams(info.parametros);
   if (info.credenciais && info.base && !parametros.has('authSource')) parametros.set('authSource', info.base);
@@ -73,14 +56,11 @@ function segredosDa(uri) {
   return segredos.filter((s) => s && s.length >= 3);
 }
 
-// troca segredos conhecidos e qualquer usuário:senha de URIs MongoDB por ***.
 function mascarar(texto, segredos = []) {
   let saida = String(texto);
   for (const segredo of [...segredos].sort((a, b) => b.length - a.length)) saida = saida.split(segredo).join('***');
   return saida.replace(/(mongodb(?:\+srv)?:\/\/)[^@/\s]+@/gi, '$1***@');
 }
-
-// ---------- processos ----------
 
 function executarFerramenta(comando, argumentos, opcoes = {}) {
   const { segredos = [], spawnFn = spawn, registrar = console.log, registrarErro = console.error } = opcoes;
@@ -92,9 +72,6 @@ function executarFerramenta(comando, argumentos, opcoes = {}) {
       reject(error);
       return;
     }
-    // a saída é mascarada por linha inteira: um segredo dividido entre dois blocos do stream é juntado antes.
-    // Nenhum trecho de linha incompleta é emitido. Uma linha acima de LIMITE_LINHA é descartada por inteiro
-    // (modo de supressão, sem acumular) e vira só AVISO_LINHA_LONGA quando a quebra chega ou o stream fecha.
     let saida = '';
     const emitir = (destino, texto) => {
       const mascarado = mascarar(texto, segredos);
@@ -156,20 +133,16 @@ async function versaoFerramenta(comando, opcoes = {}) {
   return saida.split(/\r?\n/).find(Boolean)?.trim() || 'desconhecida';
 }
 
-// arquivo YAML temporário com a URI, só legível pelo dono, apagado mesmo se a ferramenta falhar.
 async function comConfigTemporaria(uri, executar) {
   const pasta = await fsp.mkdtemp(path.join(os.tmpdir(), 'workly-mongo-'));
   const arquivo = path.join(pasta, 'config.yaml');
   try {
-    // strings JSON são escalares YAML válidos entre aspas duplas.
     await fsp.writeFile(arquivo, `uri: ${JSON.stringify(uri)}\n`, { mode: 0o600, flag: 'wx' });
     return await executar(arquivo);
   } finally {
     await fsp.rm(pasta, { recursive: true, force: true });
   }
 }
-
-// ---------- arquivos ----------
 
 async function sha256Arquivo(arquivo) {
   const hash = crypto.createHash('sha256');
@@ -201,7 +174,6 @@ async function listarArquivos(raiz, relativo = '') {
   return { encontrados, ignorados };
 }
 
-// conta documentos de um .bson(.gz) pelos prefixos de tamanho, sem ler o conteúdo.
 function contarDocumentosBson(buffer) {
   let total = 0;
   let posicao = 0;
@@ -219,8 +191,6 @@ function lerBson(arquivo) {
   const bruto = fs.readFileSync(arquivo);
   return arquivo.endsWith('.gz') ? zlib.gunzipSync(bruto) : bruto;
 }
-
-// ---------- índices e opções ----------
 
 function normalizarValor(valor) {
   if (typeof valor === 'number') return valor;
@@ -252,9 +222,6 @@ function normalizarOpcoes(opcoes = {}) {
   return JSON.parse(EJSON.stringify(escolhidas, { relaxed: true }));
 }
 
-// ---------- uploads ----------
-
-// caminho relativo seguro: sem absoluto, sem unidade, sem barra invertida, sem "." ou ".." e sem byte nulo.
 function caminhoUploadSeguro(caminho) {
   if (typeof caminho !== 'string' || !caminho || caminho.length > 500) return false;
   if (caminho.includes('\\') || caminho.includes('\0') || caminho.includes(':')) return false;
@@ -273,11 +240,6 @@ async function lstatOuNulo(caminho) {
   }
 }
 
-// Regra dos uploads: nenhum componente do caminho pode ser link simbólico ou junction (o Node reporta junctions
-// como links no lstat), nem a raiz, nem mesmo um link que aponte para dentro da raiz. O realpath confirma em seguida
-// que o caminho resolvido continua dentro da raiz.
-
-// origem (pasta uploads/ do backup): a raiz e cada componente precisam existir, ser pasta/arquivo comum e não ser link.
 async function conferirOrigemUpload(raiz, raizReal, item) {
   const partes = item.caminho.split('/');
   let atual = raiz;
@@ -296,7 +258,6 @@ async function conferirOrigemUpload(raiz, raizReal, item) {
   return atual;
 }
 
-// destino, sem gravar nada: os componentes que já existem não podem ser links; o arquivo final, se existir, é comum.
 async function conferirDestinoUpload(raizDestino, item) {
   const infoRaiz = await lstatOuNulo(raizDestino);
   if (!infoRaiz) return;
@@ -316,7 +277,6 @@ async function conferirDestinoUpload(raizDestino, item) {
   }
 }
 
-// confere todos os uploads (origem e destino) antes de qualquer gravação; qualquer problema recusa todos.
 async function validarUploads({ pastaBackup, arquivos, pastaUploads = PASTA_UPLOADS_PADRAO }) {
   const raizOrigem = path.join(pastaBackup, 'uploads');
   for (const item of arquivos) {
@@ -335,8 +295,6 @@ async function validarUploads({ pastaBackup, arquivos, pastaUploads = PASTA_UPLO
   }
 }
 
-// cria só as pastas e arquivos que faltam. Cada componente é conferido de novo logo antes de ser criado ou usado;
-// os arquivos são gravados com "wx" (falha se algo já existir, sem seguir links). Nunca sobrescreve nem apaga.
 async function restaurarUploads({ pastaBackup, arquivos, pastaUploads = PASTA_UPLOADS_PADRAO, registrar = console.log }) {
   await validarUploads({ pastaBackup, arquivos, pastaUploads });
   const resultado = { criados: [], mantidos: [] };
@@ -372,7 +330,6 @@ async function restaurarUploads({ pastaBackup, arquivos, pastaUploads = PASTA_UP
       resultado.mantidos.push(item.caminho);
       continue;
     }
-    // relê e confere o hash do que vai ser gravado, para a cópia não divergir da validação.
     const dados = await fsp.readFile(path.join(pastaBackup, 'uploads', ...partes));
     if (crypto.createHash('sha256').update(dados).digest('hex') !== item.sha256) {
       throw new ErroBackup(`Upload alterado no backup: ${item.caminho}`);
@@ -389,8 +346,6 @@ async function restaurarUploads({ pastaBackup, arquivos, pastaUploads = PASTA_UP
   return resultado;
 }
 
-// ---------- manifesto ----------
-
 function carimbo(data = new Date()) {
   const p = (v) => String(v).padStart(2, '0');
   return `${data.getFullYear()}${p(data.getMonth() + 1)}${p(data.getDate())}-${p(data.getHours())}${p(data.getMinutes())}${p(data.getSeconds())}`;
@@ -399,7 +354,6 @@ function carimbo(data = new Date()) {
 const ehHash = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const ehDataIso = (v) => typeof v === 'string' && !Number.isNaN(Date.parse(v)) && new Date(v).toISOString() === v;
 
-// valida estrutura, datas, caminhos e a integridade de cada arquivo do dump. Nada é gravado antes disto passar.
 async function validarManifesto(pastaBackup, { agora = new Date() } = {}) {
   let manifesto;
   try {
@@ -448,7 +402,6 @@ async function validarManifesto(pastaBackup, { agora = new Date() } = {}) {
   for (const item of uploads) {
     if (!caminhoUploadSeguro(item?.caminho) || !ehHash(item.sha256)) problema(`entrada de upload inválida: ${JSON.stringify(item?.caminho)}`);
   }
-  // integridade: cada arquivo listado existe e tem o hash registrado; arquivos de dados extras também são recusados.
   for (const arquivo of manifesto.arquivos) {
     const local = path.join(pastaBackup, ...arquivo.caminho.split('/'));
     const info = await fsp.lstat(local).catch(() => null);
@@ -463,8 +416,6 @@ async function validarManifesto(pastaBackup, { agora = new Date() } = {}) {
   }
   return manifesto;
 }
-
-// ---------- backup ----------
 
 async function gerarBackup(opcoes = {}) {
   const {
@@ -485,7 +436,7 @@ async function gerarBackup(opcoes = {}) {
   const inicio = agora();
   await fsp.mkdir(pastaBackups, { recursive: true });
   const pasta = path.join(pastaBackups, `workly-backup-${carimbo(inicio)}`);
-  await fsp.mkdir(pasta); // falha se já existir: nunca mistura dois backups.
+  await fsp.mkdir(pasta);
   registrar(`Backup da base "${info.base}" em ${pasta}`);
 
   await comConfigTemporaria(uriSemBase(info), (config) =>
@@ -516,7 +467,6 @@ async function gerarBackup(opcoes = {}) {
   }
   if (!colecoes.length) throw new ErroBackup('O mongodump não gerou nenhuma coleção. Confira o nome da base.');
 
-  // contas já removidas no momento do backup (informativo; a regra de restore compara com a base atual).
   let contasRemovidas = 0;
   let ultimaRemocao = null;
   if (colecoes.some((c) => c.nome === 'usuarios')) {
@@ -545,7 +495,6 @@ async function gerarBackup(opcoes = {}) {
     });
   }
 
-  // uploads: cópia simples. Links simbólicos ficam de fora e são listados.
   const { encontrados: uploadsEncontrados, ignorados } = await listarArquivos(pastaUploads);
   const uploads = [];
   for (const item of uploadsEncontrados) {
@@ -575,14 +524,11 @@ async function gerarBackup(opcoes = {}) {
       'Restaurar este backup pode trazer de volta dados de contas excluídas depois dele.'
     ]
   };
-  // o manifesto é gravado por último: sem ele, a pasta não é um backup completo.
   await fsp.writeFile(path.join(pasta, 'manifesto.json'), JSON.stringify(manifesto, null, 2), { flag: 'wx' });
   registrar(`Backup concluído: ${colecoes.length} coleções, ${uploads.length} uploads.`);
   if (ignorados.length) registrar(`Uploads ignorados: ${ignorados.length} (links simbólicos ou nomes não suportados).`);
   return { pasta, manifesto };
 }
-
-// ---------- restore ----------
 
 function verificarBaseDestino(base, ambiente = process.env) {
   if (!base) throw new ErroBackup('A URI precisa indicar o nome da base de destino.');
@@ -594,8 +540,6 @@ function verificarBaseDestino(base, ambiente = process.env) {
   );
 }
 
-// contas excluídas, anonimizadas ou em exclusão na base atual depois do início do backup.
-// Sem informação suficiente para decidir, a resposta também é bloquear.
 async function verificarExclusoesPosteriores(dbAtual, manifesto) {
   const motivos = [];
   const inicio = Date.parse(manifesto?.dump?.inicio);
@@ -627,13 +571,11 @@ async function verificarExclusoesPosteriores(dbAtual, manifesto) {
   return { motivos, idsExcluidos: ids };
 }
 
-// conferência exata, depois de restaurar na base temporária: alguma conta hoje excluída voltaria sem anonimização?
 async function contasReintroduzidas(dbTemporaria, idsExcluidos) {
   if (!idsExcluidos.length) return 0;
   return dbTemporaria.collection('usuarios').countDocuments({ _id: { $in: idsExcluidos }, removido: { $ne: true } });
 }
 
-// confere a base temporária contra o manifesto: coleções, contagens, índices, opções e uma leitura de cada coleção.
 async function validarBaseTemporaria(db, manifesto) {
   const problemas = [];
   const existentes = await db.listCollections({}, { nameOnly: false }).toArray();
@@ -690,8 +632,6 @@ class ErroTrocaParcial extends ErroBackup {
   }
 }
 
-// move cada coleção da base temporária para o destino. A coleção atual é antes renomeada para
-// <nome>_pre_restore_<carimbo> e nunca é apagada. antesDeTrocar existe para testes de falha parcial.
 async function trocarColecoes({ cliente, base, baseTemporaria, colecoes, carimboTroca, antesDeTrocar }) {
   const destino = cliente.db(base);
   const admin = cliente.db('admin');
@@ -778,7 +718,6 @@ async function restaurarBackup(opcoes = {}) {
     if (motivos.length) registrarErro(`ATENÇÃO: restaurando mesmo assim (${motivos.join('; ')}).`);
 
     const carimboTroca = carimbo(agora());
-    // nome com sufixo aleatório; opcoes.baseTemporaria só existe para os testes simularem colisão.
     baseTemporaria =
       opcoes.baseTemporaria || `${base.slice(0, 40)}_rtmp_${carimboTroca.replace('-', '')}_${crypto.randomBytes(4).toString('hex')}`;
     const temporaria = cliente.db(baseTemporaria);
@@ -807,7 +746,6 @@ async function restaurarBackup(opcoes = {}) {
         )
       );
     } finally {
-      // confirmamos acima que a base não existia; se agora tem coleções, foi o mongorestore desta execução.
       criadaPorEstaExecucao = !(await vazia().catch(() => true));
     }
 
@@ -840,7 +778,6 @@ async function restaurarBackup(opcoes = {}) {
     if (incluirUploads) uploads = await restaurarUploads({ pastaBackup, arquivos: manifesto.uploads.arquivos, pastaUploads, registrar });
     return { base, trocadas, preservadas, uploads };
   } catch (error) {
-    // só descarta a base temporária que esta execução criou, e só antes da troca (depois, ela serve à recuperação).
     if (baseTemporaria && criadaPorEstaExecucao && !trocaIniciada) {
       await cliente.db(baseTemporaria).dropDatabase().catch(() => {
         registrarErro(`Não foi possível remover a base temporária ${baseTemporaria}; remova manualmente.`);

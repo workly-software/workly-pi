@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ModuleButton } from '../ui/ModuleUI';
 import ContractCard from './ContractCard';
 
-// A section is a heading plus one list surface; rows divide by rules instead of nesting cards.
 export default function ContractSection({ items, received, ...props }) {
   const [open, setOpen] = useState(true),
     title = received ? 'Me contrataram' : 'Contratei',

@@ -1,5 +1,3 @@
-// M-01: um cliente avalia cada serviço uma única vez, mesmo contratando o mesmo serviço de novo.
-// Recontratar continua permitido; só a segunda avaliação do mesmo serviço é recusada, também sob concorrência.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -44,7 +42,6 @@ async function cenario() {
   return { freelancer, cliente, servico };
 }
 
-// contrato gravado direto no estado desejado (o fluxo completo pela API é coberto em outro teste).
 function contrato({ cliente, freelancer, servico }, status = 'concluido') {
   return Contrato.create({ cliente: cliente._id, freelancer: freelancer._id, servico: servico._id, preco: 100, tipoContratacao: 'fixo', status, detalhesPedido: 'x' });
 }
@@ -108,7 +105,6 @@ test('contratos não concluídos não são avaliados', async (t) => {
   if (pular(t)) return;
   const c = await cenario();
   for (const status of ['pendente', 'proposta_pendente', 'proposta_aceita', 'em_andamento', 'entregue', 'cancelado']) {
-    // um serviço por status: o índice de contratos só admite um contrato ativo por cliente e serviço.
     const servico = await Servico.create({ nome: status, descricao: 'd', preco: 100, categoria: categoria._id, freelancer: c.freelancer._id });
     const r = await avaliar(c.cliente, (await contrato({ ...c, servico }, status))._id);
     assert.equal(r.status, 400, status);
@@ -144,7 +140,6 @@ test('ids de autor, freelancer e serviço enviados no corpo são ignorados', asy
   const alvo = await cenario();
   const atacante = await cenario();
   const k = await contrato(atacante);
-  // tenta creditar a avaliação a outro freelancer/serviço e em nome de outro autor.
   const r = await avaliar(atacante.cliente, k._id, {
     autor: String(alvo.cliente._id),
     freelancer: String(alvo.freelancer._id),
@@ -157,7 +152,6 @@ test('ids de autor, freelancer e serviço enviados no corpo são ignorados', asy
   assert.equal(String(salva.freelancer), String(atacante.freelancer._id));
   assert.equal(String(salva.servico), String(atacante.servico._id));
   assert.equal(await Avaliacao.countDocuments({ servico: alvo.servico._id }), 0);
-  // o contrato do alvo também não pode ser usado mandando o id do cliente dele no corpo.
   const r2 = await avaliar(atacante.cliente, (await contrato(alvo))._id, { autor: String(alvo.cliente._id) });
   assert.equal(r2.status, 403);
 });
@@ -204,7 +198,6 @@ test('fluxo completo pela API: contratar, entregar, confirmar, avaliar; recontra
   const segundo = await ciclo();
   assert.equal((await avaliar(c.cliente, segundo)).status, 400);
 
-  // a lista de contratos informa ao frontend que o serviço já foi avaliado, para não oferecer o formulário.
   const meus = await amb.chamar('GET', '/api/contratos/meus', c.cliente);
   const porId = new Map(meus.dados.dados.map((k) => [k.idContrato, k]));
   assert.equal(porId.get(primeiro).jaAvaliado, true);
@@ -240,15 +233,12 @@ test('índice único parcial: instalado, compatível com avaliações antigas du
   assert.deepEqual(indice.key, { autor: 1, servico: 1 });
   assert.deepEqual(indice.partialFilterExpression, { unicaPorServico: true });
 
-  // dados antigos: duas avaliações do mesmo cliente para o mesmo serviço, gravadas antes da regra.
   const c = await cenario();
   const [k1, k2, k3] = await Promise.all([contrato(c), contrato(c), contrato(c)]);
   const base = { autor: c.cliente._id, freelancer: c.freelancer._id, servico: c.servico._id, notaServico: 5, notaFreelancer: 5 };
   await Avaliacao.collection.insertMany([{ ...base, contrato: k1._id }, { ...base, contrato: k2._id }]);
-  // reinstalar os índices não falha nem mexe nesses documentos.
   await Avaliacao.garantirIndicesAvaliacao();
   assert.equal(await Avaliacao.countDocuments({ autor: c.cliente._id, servico: c.servico._id }), 2);
-  // e um terceiro contrato do mesmo serviço continua sem poder avaliar.
   const r = await avaliar(c.cliente, k3._id);
   assert.equal(r.status, 400);
   assert.match(r.dados.mensagem, /já avaliou este serviço/);

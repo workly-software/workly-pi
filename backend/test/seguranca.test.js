@@ -1,5 +1,3 @@
-// Regressões do bloco de segurança: uploads, sessões, mensagens lidas, validação/erros e rota removida.
-// Usa um banco descartável próprio (nunca o banco "workly") e um segredo JWT só do teste.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -10,7 +8,6 @@ process.env.JWT_SECRET = process.env.JWT_SECRET_TEST || crypto.randomBytes(32).t
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-// token do cookie de sessão definido pela resposta (M-04: não vem mais no corpo).
 function sessaoDoCookie(resposta) {
   const cookie = (resposta.headers.getSetCookie?.() || []).map((c) => c.match(/^workly_sessao=([^;]*)/)).find(Boolean);
   return cookie ? decodeURIComponent(cookie[1]) : '';
@@ -58,7 +55,6 @@ test.after(async () => {
   await mongoose.disconnect();
 });
 
-// gera CPFs válidos distintos para cada usuário de teste.
 function cpfValido(n) {
   const base = String(100000000 + n).slice(-9).split('').map(Number);
   const digito = (numeros) => {
@@ -92,7 +88,6 @@ function token(usuario, payload = {}, opcoes = {}) {
   );
 }
 async function chamar(metodo, rota, { auth, json, form, bruto, tipo } = {}) {
-  // cabeçalho da aplicação, como o frontend envia (exigido no login e nas sessões por cookie).
   const headers = { 'X-Workly-Requisicao': '1' };
   if (auth) headers.Authorization = `Bearer ${auth}`;
   let body;
@@ -278,7 +273,6 @@ test('perfil: valida tipos e formatos, devolve 409 para e-mail em uso e salva da
     [{ bio: 'x'.repeat(1001) }, 400],
     [{ notificacoesEmail: 'talvez' }, 400],
     [{ nome: '   ' }, 400],
-    // M-02: trocar o e-mail exige a senha atual; sem ela, a rota não confirma se o e-mail já existe.
     [{ email: outro.email.toUpperCase() }, 400],
     [{ email: outro.email.toUpperCase(), senhaAtual: 'senha-forte-1' }, 409]
   ];

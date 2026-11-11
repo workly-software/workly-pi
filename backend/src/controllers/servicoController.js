@@ -5,8 +5,6 @@ const { obterCampo, idMongoValido } = require('../utils/requisicaoUtils');
 const { removerArquivoSeExistir } = require('../utils/arquivoUtils');
 const servicoService = require('../services/servicoService');
 
-// lista serviços com filtros e paginação básica.
-// a parte de avaliação mínima é filtrada depois porque a média é calculada fora do documento do serviço.
 exports.listarTodos = async (req, res) => {
   try {
     const { servicos, pagination } = await servicoService.listar(req.query);
@@ -43,15 +41,11 @@ exports.buscarPorCategoria = async (req, res) => {
   }
 };
 
-// criação de anúncio: só freelancer pode criar serviço.
-// cria serviço novo.
-// se não tiver imagem enviada, o front/backend usam a imagem padrão.
 exports.criar = async (req, res) => {
   let criacaoConcluida = false;
   try {
     const usuario = await Usuario.findById(req.user.id_usuario);
     if (!usuario || usuario.tipoConta !== 'Freelancer') {
-      // se o cara mandou imagem mas não pode criar anúncio, apaga o arquivo pra não virar lixo no servidor.
       if (req.file) removerArquivoSeExistir(`/uploads/servicos/${req.file.filename}`);
       return erro(res, 403, 'Acesso negado. Este usuário não é um freelancer.');
     }
@@ -208,7 +202,6 @@ exports.remover = async (req, res) => {
     if (resultado.indisponivel) return erro(res, 409, 'Este anúncio já foi alterado ou está sendo retirado. Atualize a página.');
     if (resultado.contratosAtivos)
       return erro(res, 400, 'Não é possível remover um serviço com contratos ativos.');
-    // a imagem fica: contratos e avaliações antigos ainda exibem o serviço retirado.
     return sucesso(res, 200, 'Serviço removido com sucesso.', { idServico: req.params.id });
   } catch (error) {
     console.error(error);

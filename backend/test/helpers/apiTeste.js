@@ -1,5 +1,3 @@
-// Ambiente de testes de integração: banco descartável próprio, segredo JWT do teste e servidor HTTP real.
-// Sem MongoDB local os testes são pulados; com WORKLY_EXIGIR_MONGO=1 a ausência vira falha.
 const crypto = require('node:crypto');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET_TEST || crypto.randomBytes(32).toString('hex');
@@ -18,7 +16,6 @@ function cpfValido(n) {
   return [...base, d1, digito([...base, d1])].join('');
 }
 
-// token do cookie de sessão definido pela resposta (vazio quando a resposta não cria sessão).
 function sessaoDoCookie(resposta) {
   const cookies = typeof resposta.headers.getSetCookie === 'function' ? resposta.headers.getSetCookie() : [];
   const valor = cookies.map((c) => c.match(/^workly_sessao=([^;]*)/)).find(Boolean)?.[1];
@@ -58,7 +55,6 @@ async function iniciarAmbiente(nome) {
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
-  // envia o cabeçalho da aplicação, como o frontend; "sessao" traz o token do cookie definido pela resposta.
   async function chamar(metodo, rota, usuario, json) {
     const headers = { 'X-Workly-Requisicao': '1', ...(usuario ? { Authorization: `Bearer ${token(usuario)}` } : {}) };
     if (json !== undefined) headers['Content-Type'] = 'application/json';

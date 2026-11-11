@@ -8,7 +8,6 @@ import {
   takeResetToken
 } from '../src/services/authService.js';
 
-// minimal window: replaceState updates location like the browser does.
 function fakeWindow(url) {
   const parsed = new URL(url);
   const win = {
@@ -35,7 +34,6 @@ test('reset token leaves the URL on first read and stays in memory for the submi
   assert.equal(href(win), '/redefinir-senha');
   assert.ok(!href(win).includes(token));
   assert.deepEqual(win.history.calls, [[{ key: 'k' }, '/redefinir-senha']], 'replaces, never pushes, keeping router state');
-  // a second read (React double render) still gets the token from memory
   assert.equal(takeResetToken(win), token);
 
   const old = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -49,10 +47,8 @@ test('reset token leaves the URL on first read and stays in memory for the submi
   await resetPassword({ token: takeResetToken(win), novaSenha: 'nova-senha-1', confirmarSenha: 'nova-senha-1' });
   assert.equal(bodies[0].token, token);
 
-  // after leaving the page, a reload without the token shows the invalid-link state
   clearResetToken();
   assert.equal(takeResetToken(fakeWindow('http://workly.local/redefinir-senha')), '');
-  // a legacy ?token= is removed too, keeping other query values
   const legacy = fakeWindow(`http://workly.local/redefinir-senha?token=${token}&x=1`);
   assert.equal(takeResetToken(legacy), token);
   assert.equal(href(legacy), '/redefinir-senha?x=1');

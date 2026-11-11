@@ -1,6 +1,5 @@
 import { useId } from 'react';
 
-// Login geometry only; other screen variants remain with their migration.
 export default function FormField({
   id,
   label,

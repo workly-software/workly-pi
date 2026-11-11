@@ -1,5 +1,3 @@
-// bcrypt considera no máximo 72 bytes UTF-8. A regra vale para senhas novas;
-// login e confirmação da senha atual preservam a compatibilidade com contas antigas.
 function motivoNovaSenhaInvalida(senha) {
   if (typeof senha !== 'string' || !senha) return 'Informe a nova senha.';
   if (senha.length < 8) return 'A senha deve ter pelo menos 8 caracteres.';

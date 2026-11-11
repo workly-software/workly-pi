@@ -1,4 +1,3 @@
-// Etapa 1: acordo de valor, ajustes de entrega e chat encerrado, com requisições HTTP reais em banco descartável.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -28,7 +27,6 @@ const servicoACombinar = () =>
 const servicoFixo = () =>
   Servico.create({ nome: 'Logotipo', descricao: 'd', preco: 200, categoria: categoria._id, freelancer: freelancer._id });
 const rota = (contrato, acao) => `/api/contratos/${contrato.idContrato || contrato._id}/${acao}`;
-// conta as notificações do tipo e confere que todas foram para o destinatário esperado.
 async function notificacoes(contratoId, tipo, destinatario) {
   const lista = await Notificacao.find({ referenciaId: contratoId, tipo }).lean();
   assert.deepEqual(
@@ -90,11 +88,9 @@ test('contraproposta: o cliente precisa aprovar explicitamente o valor do freela
   assert.equal(contra.dados.dados.precoProposto, 450);
   assert.equal(await notificacoes(criado.idContrato, 'proposta_valor', cliente), 1);
 
-  // o freelancer não aprova a própria contraproposta nem começa o trabalho
   assert.equal((await amb.chamar('POST', rota(criado, 'aceitar'), freelancer)).status, 409);
   assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), freelancer)).status, 409);
   assert.equal((await amb.chamar('POST', rota(criado, 'iniciar'), freelancer)).status, 400);
-  // aprovar um valor diferente do que está na mesa não grava nada
   assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), cliente, { valor: 300 })).status, 409);
   assert.equal((await Contrato.findById(criado.idContrato)).negociacao.estado, 'aguardando_cliente');
 
@@ -115,31 +111,26 @@ test('contraproposta: o cliente precisa aprovar explicitamente o valor do freela
 test('alteração unilateral: ninguém muda o valor fora da vez nem depois do acordo', async (t) => {
   if (pular(t)) return;
   const criado = await proposta(300);
-  // fora da vez
   assert.equal((await amb.chamar('POST', rota(criado, 'propor-valor'), cliente, { valor: 100 })).status, 409);
   assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), cliente)).status, 409);
   assert.equal((await amb.chamar('POST', rota(criado, 'propor-valor'), freelancer, { valor: 500 })).status, 200);
   assert.equal((await amb.chamar('POST', rota(criado, 'propor-valor'), freelancer, { valor: 900 })).status, 409);
-  // valores inválidos
   for (const valor of [-5, 0, 'abc', 10.555, '1e3', { $gt: 0 }, [500], null, 2000000]) {
     const resposta = await amb.chamar('POST', rota(criado, 'propor-valor'), cliente, { valor });
     assert.equal(resposta.status, 400, `valor ${JSON.stringify(valor)}`);
   }
   assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), cliente, { valor: 500 })).status, 200);
 
-  // depois do acordo
   for (const usuario of [cliente, freelancer]) {
     assert.equal((await amb.chamar('POST', rota(criado, 'propor-valor'), usuario, { valor: 1 })).status, 409);
     assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), usuario)).status, 409);
   }
   assert.equal((await amb.chamar('POST', rota(criado, 'aceitar'), freelancer)).status, 400);
-  // a rota antiga não aceita preço no corpo
   await amb.chamar('PATCH', rota(criado, 'status'), freelancer, { status: 'em_andamento', preco: 1, precoProposto: 1 });
   const salvo = await Contrato.findById(criado.idContrato).lean();
   assert.equal(salvo.preco, 500);
   assert.equal(salvo.status, 'em_andamento');
 
-  // proposta sem valor: não há o que aceitar até alguém propor
   const semValor = await proposta();
   assert.equal(semValor.precoProposto, null);
   const aceite = await amb.chamar('POST', rota(semValor, 'aceitar'), freelancer);
@@ -206,7 +197,6 @@ test('contrato antigo sem preço fica pendente de acordo; concluídos não são 
   assert.equal((await amb.chamar('POST', rota({ _id: concluidoId }, 'propor-valor'), freelancer, { valor: 100 })).status, 400);
   assert.deepEqual(await raw.findOne({ _id: concluidoId }), concluidoAntes);
 
-  // sem acordo não há entrega; qualquer parte propõe, a outra aprova, e o status não muda
   assert.equal((await amb.chamar('POST', rota({ _id: antigoId }, 'entregar'), freelancer)).status, 409);
   assert.equal((await amb.chamar('POST', rota({ _id: antigoId }, 'aprovar-valor'), freelancer)).status, 409);
   assert.equal((await amb.chamar('POST', rota({ _id: antigoId }, 'propor-valor'), freelancer, { valor: 500 })).status, 200);
@@ -215,7 +205,6 @@ test('contrato antigo sem preço fica pendente de acordo; concluídos não são 
   assert.deepEqual([acordado.status, acordado.preco, acordado.negociacao.estado], ['em_andamento', 500, 'fechado']);
   assert.equal((await amb.chamar('POST', rota({ _id: antigoId }, 'entregar'), freelancer)).status, 200);
 
-  // contrato antigo com o valor sugerido pelo cliente já aceito continua valendo, sem migração
   const { insertedId: aceitoId } = await raw.insertOne({ ...base, servico: (await servicoACombinar())._id, status: 'proposta_aceita', preco: 250, precoProposto: 250 });
   assert.equal((await amb.chamar('POST', rota({ _id: aceitoId }, 'iniciar'), freelancer)).status, 200);
   assert.equal((await Contrato.findById(aceitoId)).preco, 250);
@@ -240,7 +229,6 @@ test('ajustes: o cliente justifica, o contrato volta para em andamento e aceita 
   assert.equal(ajuste.status, 200);
   assert.equal(ajuste.dados.dados.status, 'em_andamento');
   assert.equal(await notificacoes(contrato._id, 'ajuste_solicitado', freelancer), 1);
-  // fora de "entregue" não há ajuste
   assert.equal((await amb.chamar('POST', rota(contrato, 'solicitar-ajuste'), cliente, { justificativa })).status, 400);
 
   assert.equal((await amb.chamar('POST', rota(contrato, 'entregar'), freelancer)).status, 200);
@@ -262,7 +250,6 @@ test('corrida entre confirmar entrega e solicitar ajuste: só uma vence', async 
       () => amb.chamar('POST', rota(contrato, 'confirmar'), cliente),
       () => amb.chamar('POST', rota(contrato, 'solicitar-ajuste'), cliente, { justificativa: 'Faltou a versão em preto e branco.' })
     ];
-    // alterna quem sai primeiro para as duas ordens acontecerem
     const ordem = rodada % 2 ? [1, 0] : [0, 1];
     const respostas = await Promise.all(ordem.map((i) => chamadas[i]()));
     const [confirmar, ajuste] = ordem[0] === 0 ? respostas : [respostas[1], respostas[0]];
@@ -286,7 +273,6 @@ test('corrida determinística: confirmação gravada entre a leitura e a gravaç
   ]) {
     const contrato = await contratoEntregue();
     const original = Contrato.findOneAndUpdate;
-    // a outra ação grava logo depois que esta leu o contrato como "entregue"
     const mock = t.mock.method(Contrato, 'findOneAndUpdate', async function (...args) {
       await Contrato.updateOne({ _id: contrato._id, status: 'entregue' }, { $set: vencedora });
       return original.apply(this, args);
@@ -344,7 +330,6 @@ test('autorização: terceiros não negociam, não pedem ajuste e não acessam o
   assert.deepEqual([salvo.status, salvo.precoProposto, salvo.historico.length], ['proposta_pendente', 300, 1]);
   assert.equal((await Contrato.findById(entregue._id)).status, 'entregue');
   assert.equal(await Mensagem.countDocuments({ contrato: criado.idContrato }), 0);
-  // o cliente também não aprova o próprio valor nem aceita como freelancer
   assert.equal((await amb.chamar('POST', rota(criado, 'aceitar'), cliente)).status, 403);
   assert.equal((await amb.chamar('POST', rota(criado, 'aprovar-valor'), cliente)).status, 409);
 });

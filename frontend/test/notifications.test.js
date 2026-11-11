@@ -42,7 +42,6 @@ test('notification contracts sum unread counts, filter message entries and prese
   );
   assert.equal(await notificationCounts(), 5);
   assert.deepEqual(await notificationList(), { items: [{ tipo: 'contrato_novo' }], messages: 3 });
-  // the bell asks for the preference-aware message count, never the raw chat count.
   const urls = globalThis.fetch.mock.calls.map((call) => call.arguments[0]);
   const messageUrls = urls.filter((url) => url.includes('/api/mensagens/'));
   assert.equal(messageUrls.length, 2);

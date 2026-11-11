@@ -62,7 +62,6 @@ export default function UserMenu({ user }) {
                   text === 'Sair'
                     ? async (event) => {
                         event.preventDefault();
-                        // the API revokes this session's token; the other devices stay signed in.
                         await sair();
                         location.assign('/');
                       }

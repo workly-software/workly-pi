@@ -1,5 +1,3 @@
-// M-03: CPF com dígitos verificadores, sem truncamento e compatível com contas antigas.
-// Cada cadastro sai de um IP próprio (proxy de loopback confiável) para não esbarrar no limite de cadastro.
 process.env.TRUST_PROXY = 'loopback';
 
 const test = require('node:test');
@@ -7,7 +5,6 @@ const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
 const { validarCpf, motivoCpfInvalido, normalizarCpf } = require('../src/utils/cpfUtils');
 
-// referência independente: algoritmo oficial dos dígitos verificadores.
 function referencia(cpf) {
   if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
   const dv = (n) => {
@@ -61,7 +58,6 @@ test('validarCpf coincide com a referência em 5000 CPFs aleatórios e 2000 vál
   for (let i = 0; i < 2000; i += 1) {
     const cpf = gerarValido(Math.floor(Math.random() * 1e9));
     assert.equal(validarCpf(cpf), !sequencial(cpf), cpf);
-    // trocar qualquer dígito verificador invalida.
     const errado = cpf.slice(0, 10) + ((Number(cpf[10]) + 1) % 10);
     assert.equal(validarCpf(errado), false, errado);
   }
@@ -139,7 +135,6 @@ test('o mesmo CPF com outra pontuação continua duplicado (409)', async (t) => 
   assert.equal(r.dados.mensagem, MENSAGEM_CPF);
 });
 
-// a resposta para CPF já cadastrado não confirma que o CPF existe na base.
 const MENSAGEM_CPF =
   'Não foi possível concluir o cadastro com os dados informados. Confira as informações ou, se já possui uma conta, tente entrar ou recuperar sua senha.';
 
@@ -174,7 +169,6 @@ test('conta antiga com CPF inválido continua entrando e salvando outros dados',
   const Usuario = require('../src/models/Usuario');
   const bcrypt = require('bcryptjs');
   const email = `antiga${Date.now()}@teste.local`;
-  // gravada direto no banco, como as contas criadas antes da validação dos dígitos.
   const { insertedId } = await Usuario.collection.insertOne({
     nome: 'Antiga', email, senha: await bcrypt.hash('senha-forte-1', 4), cpf: '12345678900', tipoConta: 'Contratante',
     versaoSessao: 0, removido: false, exclusaoConfirmadaEm: null, removendoDesde: null, createdAt: new Date(), updatedAt: new Date()
@@ -185,7 +179,6 @@ test('conta antiga com CPF inválido continua entrando e salvando outros dados',
   });
   assert.equal(login.status, 200);
   const usuario = await Usuario.findById(insertedId);
-  // alterarTipoConta usa save(), que valida todos os campos obrigatórios.
   const r = await amb.chamar('PATCH', '/api/usuarios/tipo-conta', usuario, { tipoConta: 'Freelancer', areaAtuacao: 'Design' });
   assert.equal(r.status, 200, JSON.stringify(r.dados));
   const p = await amb.chamar('PUT', '/api/usuarios/perfil', usuario, { bio: 'continua funcionando' });
@@ -193,7 +186,6 @@ test('conta antiga com CPF inválido continua entrando e salvando outros dados',
   const salvo = await Usuario.findById(insertedId).lean();
   assert.equal(salvo.cpf, '12345678900', 'o CPF antigo não é alterado');
   assert.equal(salvo.tipoConta, 'Freelancer');
-  // mas trocar o CPF da conta antiga por outro inválido não passa.
   usuario.cpf = '11122233300';
   await assert.rejects(usuario.save(), (e) => e.name === 'ValidationError');
 });

@@ -9,8 +9,6 @@ const avaliacaoSchema = new mongoose.Schema(
     notaServico: { type: Number, min: 1, max: 5, required: true },
     notaFreelancer: { type: Number, min: 1, max: 5, required: true },
     comentario: { type: String, default: '', trim: true },
-    // gravado em toda avaliação nova: coloca o documento no índice único por cliente e serviço.
-    // avaliações antigas não têm o campo, ficam fora do índice e não são alteradas.
     unicaPorServico: { type: Boolean }
   },
   { timestamps: true }
@@ -19,8 +17,6 @@ const avaliacaoSchema = new mongoose.Schema(
 const INDICE_AVALIACAO_UNICA = 'avaliacao_unica_por_cliente_servico';
 
 avaliacaoSchema.index({ autor: 1, contrato: 1 }, { unique: true });
-// um cliente avalia cada serviço uma vez, mesmo contratando o serviço de novo. O banco garante a regra
-// contra pedidos simultâneos; o filtro parcial deixa de fora duplicações antigas, que não são apagadas.
 avaliacaoSchema.index(
   { autor: 1, servico: 1 },
   { unique: true, name: INDICE_AVALIACAO_UNICA, partialFilterExpression: { unicaPorServico: true } }
@@ -28,14 +24,10 @@ avaliacaoSchema.index(
 avaliacaoSchema.index({ servico: 1 });
 avaliacaoSchema.index({ freelancer: 1, createdAt: -1 });
 
-// terceiro parâmetro força o mongodb a usar exatamente "avaliacoes".
-// sem isso, o mongoose pluraliza "avaliacao" como "avaliacaos".
 const Avaliacao = mongoose.model('Avaliacao', avaliacaoSchema, 'avaliacoes');
 
 let indiceVerificado = false;
 
-// instala os índices e confere o único por cliente e serviço. Sem ele não há garantia contra pedidos
-// simultâneos, então novas avaliações ficam bloqueadas até a instalação dar certo.
 async function garantirIndicesAvaliacao() {
   try {
     await Avaliacao.createIndexes();

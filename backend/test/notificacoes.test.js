@@ -1,4 +1,3 @@
-// Etapa 2: preferências, notificações essenciais, dono da notificação e ordem gravação → aviso.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -106,7 +105,6 @@ test('terceiro não marca como lida nem remove a notificação de outro usuário
   assert.equal(salvo.lida, false);
   const lista = await amb.chamar('GET', '/api/notificacoes', terceiro);
   assert.ok(!lista.dados.dados.some((n) => String(n._id) === String(alvo._id)));
-  // o dono consegue
   assert.equal((await amb.chamar('PATCH', `/api/notificacoes/${alvo._id}/lida`, freelancer)).status, 200);
   assert.equal((await Notificacao.findById(alvo._id)).lida, true);
 });
@@ -201,7 +199,6 @@ test('confirmação que perde a corrida para o ajuste não cria entrega_confirma
   if (pular(t)) return;
   const { cliente, contratoId } = await contratoEntregue();
   const original = Contrato.findOneAndUpdate;
-  // o ajuste grava logo depois que a confirmação leu o contrato como "entregue"
   const mock = t.mock.method(Contrato, 'findOneAndUpdate', async function (...args) {
     await Contrato.updateOne({ _id: contratoId, status: 'entregue' }, { $set: { status: 'em_andamento' } });
     return original.apply(this, args);

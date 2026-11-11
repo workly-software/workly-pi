@@ -1,4 +1,3 @@
-// só remove a pontuação. Não corta em 11 dígitos: um CPF longo demais é recusado, não truncado.
 function normalizarCpf(cpf = '') {
   return String(cpf).replace(/\D/g, '');
 }
@@ -20,8 +19,6 @@ function cpfSequencial(cpf = '') {
   const digits = normalizarCpf(cpf);
   if (digits.length !== 11) return false;
 
-  // Bloqueia bases como 123.456.789-09, 987.654.321-00, 012.345.678-90 etc.
-  // A checagem usa os 9 primeiros dígitos porque os 2 últimos são dígitos verificadores.
   const base = digits.slice(0, 9);
   const crescente = '01234567890123456789';
   const decrescente = '98765432109876543210';
@@ -46,8 +43,6 @@ function digitosVerificadoresValidos(digits) {
   );
 }
 
-// CPF válido: 11 números, dígitos verificadores corretos e base que não seja repetida (111.111.111-11)
-// nem sequencial (123.456.789-09), combinações que têm dígitos certos mas não são de ninguém.
 function validarCpf(cpf = '') {
   const digits = normalizarCpf(cpf);
   if (digits.length !== 11) return false;
@@ -55,7 +50,6 @@ function validarCpf(cpf = '') {
   return digitosVerificadoresValidos(digits);
 }
 
-// recebe o valor como veio na requisição: além dos números, só aceita a pontuação usual (ponto, hífen, espaço).
 function motivoCpfInvalido(cpf = '') {
   const texto = typeof cpf === 'string' || typeof cpf === 'number' ? String(cpf).trim() : '';
   const digits = normalizarCpf(texto);

@@ -1,6 +1,3 @@
-// Exclusão de conta interrompida em cada gravação: a recuperação é repetível, não reativa contas
-// parcialmente anonimizadas e não deixa contratos ativos ligados a contas encerradas.
-// Não há transação do MongoDB: a garantia vem da confirmação sem volta + conclusão idempotente.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -36,7 +33,6 @@ const silenciar = (t) => t.mock.method(console, 'error', () => {});
 test('notificações: só os textos que citam a conta removida mudam, com o contexto preservado', async (t) => {
   if (pular(t)) return;
   const [removida, outra, cliente] = [await amb.criarUsuario('Freelancer'), await amb.criarUsuario(), await amb.criarUsuario()];
-  // um homônimo sem relação com a conta removida não pode ser alterado.
   await Usuario.updateOne({ _id: outra._id }, { nome: removida.nome });
   const servico = await novoServico(removida);
   const contrato = await Contrato.create({ cliente: cliente._id, freelancer: removida._id, servico: servico._id, preco: 120, status: 'concluido' });
@@ -50,7 +46,6 @@ test('notificações: só os textos que citam a conta removida mudam, com o cont
     { ...base, destinatario: removida._id, tipo: 'avaliacao_recebida', titulo: 'Você recebeu uma avaliação!', mensagem: `${removida.nome} avaliou seu serviço com nota 5.`, referenciaId: avaliacaoDeOutra._id, tipoReferencia: 'avaliacao' },
     { ...base, destinatario: cliente._id, tipo: 'entrega_realizada', titulo: 'Entrega realizada', mensagem: 'O freelancer entregou "Ilustração".', referenciaId: contrato._id, tipoReferencia: 'contrato' }
   ]);
-  // avaliação escrita pela conta removida (como cliente de outro contrato)
   const servicoOutra = await novoServico(outra);
   const contratoComoCliente = await Contrato.create({ cliente: removida._id, freelancer: outra._id, servico: servicoOutra._id, preco: 50, status: 'concluido' });
   const avaliacaoDaRemovida = await Avaliacao.create({ autor: removida._id, freelancer: outra._id, servico: servicoOutra._id, contrato: contratoComoCliente._id, notaServico: 4, notaFreelancer: 3 });
@@ -64,7 +59,6 @@ test('notificações: só os textos que citam a conta removida mudam, com o cont
   assert.equal(await ler(nAvaliacao), null, 'notificações da própria conta removida são apagadas');
   assert.equal((await ler(nAvaliacaoDaRemovida)).mensagem, 'Usuário removido avaliou seu serviço com nota 3.');
   assert.equal((await ler(nContrato)).mensagem, 'O freelancer entregou "Ilustração".');
-  // repetir não altera nada
   await conta.anonimizarNotificacoes(removida._id);
   assert.equal((await ler(nAvaliacaoDaRemovida)).mensagem, 'Usuário removido avaliou seu serviço com nota 3.');
 });
@@ -90,7 +84,6 @@ test('queda depois da confirmação: conta fica encerrada e a recuperação conc
   const [usuario, cliente] = [await amb.criarUsuario('Freelancer'), await amb.criarUsuario()];
   const servico = await novoServico(usuario);
   await Favorito.create({ usuario: cliente._id, servico: servico._id });
-  // a anonimização falha (queda simulada) depois que os passos anteriores já rodaram
   const original = Usuario.collection.updateOne.bind(Usuario.collection);
   const queda = t.mock.method(Usuario.collection, 'updateOne', async (filtro, atualizacao, ...resto) => {
     if (atualizacao?.$set?.removido === true) throw new Error('processo interrompido');
@@ -104,7 +97,6 @@ test('queda depois da confirmação: conta fica encerrada e a recuperação conc
   assert.ok(parcial.exclusaoConfirmadaEm, 'a confirmação ficou gravada');
   assert.equal(parcial.removido, false);
   assert.equal((await Servico.findById(servico._id)).removido, true, 'passos anteriores já aplicados');
-  // não reativa: sem login, sem sessão, sem contratação, mesmo depois de a marca de 5 minutos expirar
   await Usuario.updateOne({ _id: usuario._id }, { removendoDesde: new Date(0) });
   assert.equal((await login(usuario)).status, 401);
   assert.equal((await amb.chamar('GET', '/api/contratos/meus', usuario)).status, 401);
@@ -128,7 +120,6 @@ test('pedido gravado e processo caído antes da segunda checagem: a recuperaçã
   const servico = await novoServico(usuario);
   const servicoTerceiro = await novoServico(terceiro);
   assert.equal((await amb.chamar('DELETE', '/api/usuarios/perfil', usuario, { senhaAtual: SENHA })).status, 200);
-  // o contrato que a requisição concorrente gravou antes de cair (sem a segunda checagem)
   const orfao = await Contrato.collection.insertOne({ cliente: cliente._id, freelancer: usuario._id, servico: servico._id, preco: 120, status: 'pendente', tipoContratacao: 'fixo', createdAt: new Date(), updatedAt: new Date() });
   const alheio = await Contrato.create({ cliente: cliente._id, freelancer: terceiro._id, servico: servicoTerceiro._id, preco: 50, status: 'pendente' });
 

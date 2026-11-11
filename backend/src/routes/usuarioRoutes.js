@@ -5,7 +5,6 @@ const { uploadPerfil } = require('../middleware/uploadArquivoMiddleware');
 
 const router = express.Router();
 
-// rotas do perfil do usuário.
 router.get('/perfil', autenticacaoMiddleware, controller.buscarPerfil);
 
 router.get('/publico/:id', controller.buscarPerfilPublico);
@@ -25,7 +24,6 @@ router.put('/perfil/senha', autenticacaoMiddleware, controller.atualizarSenha);
 
 router.delete('/perfil', autenticacaoMiddleware, controller.excluirPerfil);
 
-// alias antigos para manter compatibilidade com código anterior.
 router.get('/profile', autenticacaoMiddleware, controller.buscarPerfil);
 
 router.put('/profile', autenticacaoMiddleware, controller.atualizarPerfil);

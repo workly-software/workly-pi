@@ -64,7 +64,6 @@ export default function ProposalPage() {
   }, [id, navigate]);
   async function submit(event) {
     event.preventDefault();
-    // One request per confirmation: double clicks and a reopened form cannot resend.
     if (!service || sending.current || sent) return;
     const fd = new FormData(event.currentTarget),
       mensagem = String(fd.get('mensagem') || '').trim();
@@ -78,11 +77,9 @@ export default function ProposalPage() {
     try {
       response = await createContract({ servicoId: id, precoProposto: fd.get('precoProposto'), mensagem });
     } catch (error) {
-      // Fields are uncontrolled and untouched, so the draft survives for a retry.
       sending.current = false;
       setBusy(false);
       if (error.status === 409) {
-        // The server already holds an active order for this service: point to it instead of retrying.
         const result = await showAuthAlert({
           icon: 'warning',
           symbol: 'fa-file-signature',

@@ -1,6 +1,3 @@
-// H-01: limites de login e cadastro por cliente, com IP real atrás do proxy confiável e sem falsificação.
-// A API sobe confiando no loopback, como o nginx do Docker em relação à rede interna: cada requisição
-// traz X-Forwarded-For com o IP do "cliente", como o nginx envia depois de sobrescrever o cabeçalho.
 process.env.TRUST_PROXY = 'loopback';
 
 const test = require('node:test');
@@ -11,7 +8,6 @@ const { lerConfiancaProxy, chaveIpCliente } = require('../src/utils/ipCliente');
 const LIMITE = 10;
 let amb;
 let ipSeq = 0;
-// cada teste usa IPs próprios (documentação: 203.0.113.0/24 e 2001:db8::/32), então os contadores não se misturam.
 const novoIp = () => `203.0.113.${++ipSeq}`;
 
 test.before(async () => {
@@ -43,7 +39,6 @@ async function enviar(rota, corpo, xff) {
 
 const loginErrado = (xff) =>
   enviar('/api/autenticacao/login', { email: 'ninguem@teste.local', senha: 'senha-errada-1' }, xff);
-// corpo incompleto: responde 400 sem criar conta, mas conta no limite do cadastro.
 const cadastroInvalido = (xff, rota = '/api/autenticacao/cadastro') => enviar(rota, { nome: 'x' }, xff);
 
 async function esgotar(fn, xff) {
@@ -146,7 +141,6 @@ test('logins bem-sucedidos não consomem o limite; falhas continuam bloqueadas',
   }
   assert.deepEqual(await esgotar(loginErrado, ip), Array(LIMITE).fill(401));
   assert.equal((await loginErrado(ip)).status, 429);
-  // força bruta bloqueada também para a senha certa enquanto a janela durar.
   assert.equal((await enviar('/api/autenticacao/login', { email: usuario.email, senha: 'senha-forte-1' }, ip)).status, 429);
 });
 
@@ -155,8 +149,6 @@ test('X-Forwarded-For encadeado: vale o endereço acrescentado pelo proxy confi�
   const real = novoIp();
   const status = [];
   for (let i = 0; i < LIMITE + 1; i += 1) {
-    // o cliente forja um IP diferente a cada tentativa; um proxy que acrescenta (em vez de sobrescrever)
-    // deixa o valor forjado à esquerda e o endereço real à direita.
     status.push((await loginErrado(`198.51.100.${i + 1}, ${real}`)).status);
   }
   assert.equal(status.at(-1), 429, `rotacionar o IP forjado não pode burlar o limite: ${status}`);
@@ -166,13 +158,11 @@ test('conexão de fora dos proxies confiáveis: X-Forwarded-For é ignorado', as
   if (pular(t)) return;
   const app = require('../src/app');
   const anterior = app.get('trust proxy');
-  // nenhum proxy confiável (acesso direto à API): o IP é o da conexão, qualquer que seja o cabeçalho.
   app.set('trust proxy', false);
   t.after(() => app.set('trust proxy', anterior));
   const status = [];
   for (let i = 0; i < LIMITE + 1; i += 1) status.push((await loginErrado(`192.0.2.${i + 1}`)).status);
   assert.equal(status.at(-1), 429, `XFF falso a cada tentativa não pode criar baldes novos: ${status}`);
-  // o mesmo vale para o cadastro, que tem o próprio contador.
   assert.equal((await cadastroInvalido('192.0.2.200')).status, 400);
 });
 

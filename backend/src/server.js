@@ -9,7 +9,6 @@ const { recuperarExclusoesPendentes } = require('./services/contaService');
 
 const INTERVALO_RECUPERACAO_MS = 10 * 60 * 1000;
 
-// retoma exclusões de conta interrompidas por queda do processo. Falhas só vão para o log.
 async function recuperarExclusoes() {
   try {
     const { exclusoesConcluidas, contratosCancelados } = await recuperarExclusoesPendentes();
@@ -21,20 +20,15 @@ async function recuperarExclusoes() {
   }
 }
 
-// instala e verifica índices críticos sem depender do autoIndex. Sem o índice único a API continua
-// no ar para consultas, mas recusa novos pedidos e propostas (503) até a proteção ser restabelecida.
 async function prepararIndices() {
-  // e-mail e CPF únicos antes de aceitar cadastros; sem eles, o cadastro responde 503 (falha registrada no log).
   if (await garantirIndicesUsuario()) console.log('Proteção contra e-mail e CPF duplicados ativa.');
   const resultado = await garantirIndicesContrato();
   if (resultado.instalado) console.log('Proteção contra contratos duplicados ativa.');
   else relatarProblemaIndice(resultado);
-  // sem o índice de avaliações, novas avaliações respondem 503 até a instalação dar certo.
   if (await garantirIndicesAvaliacao()) console.log('Proteção contra avaliações repetidas ativa.');
   else console.error('ATENÇÃO: índice único de avaliações indisponível; novas avaliações ficarão bloqueadas.');
 }
 
-// ponto de partida do backend: conecta no mongo, prepara os dados demo se estiver ligado e sobe a api
 (async () => {
   try {
     await connectDatabase();
@@ -43,7 +37,6 @@ async function prepararIndices() {
     setInterval(recuperarExclusoes, INTERVALO_RECUPERACAO_MS).unref();
 
     if (ambiente.autoSeed) {
-      // banco já começa com categorias/serviços de exemplo.
       await popularBancoDemo();
     }
 

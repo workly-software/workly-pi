@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import Button from '../ui/Button';
 
-// Pages with a header render the theme toggle there (floatingToggle={false});
-// login keeps the floating one because it has no header.
 const defaultBackground = 'bg-workly-paper dark:bg-workly-night';
 
 export default function AuthShell({

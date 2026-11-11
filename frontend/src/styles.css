@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 
-/* Inclusive legacy limits, broad first so narrower rules retain precedence. */
 @custom-variant legacy-max-1200 (@media (max-width: 1200px));
 @custom-variant legacy-max-1180 (@media (max-width: 1180px));
 @custom-variant legacy-max-1120 (@media (max-width: 1120px));
@@ -82,12 +81,10 @@
   --color-workly-primary: #04bf55;
   --color-workly-primary-dark: #039447;
   --color-workly-primary-glow: #0fce6a;
-  /* Brand green stays for fills and accents; ink carries text and white-label buttons (≥4.5:1). */
   --color-workly-primary-ink: #037a3a;
   --color-workly-primary-ink-hover: #036b33;
   --color-workly-primary-tint: #e7f6ee;
   --color-workly-deep: #05452a;
-  /* Editorial home: warm paper ground, forest field, Bricolage display. */
   --color-workly-paper: #f5f3ee;
   --color-workly-rule: #ddd8cc;
   --color-workly-ink-warm: #16211b;
@@ -98,7 +95,6 @@
   --color-workly-on-forest-muted: #a9c4b6;
   --color-workly-night: #0c1411;
   --color-workly-night-raised: #131d19;
-  /* Theme-aware surfaces: card sits on paper; sunken is a quiet inset. Redefined for dark below. */
   --color-workly-card: #ffffff;
   --color-workly-sunken: #efece5;
   --font-workly-display: 'Bricolage Grotesque', Poppins, sans-serif;
@@ -158,8 +154,6 @@
 
 @custom-variant dark (&:where([data-workly-theme="dark"], [data-workly-theme="dark"] *));
 
-/* Browser surfaces share the palette: one focus ring and selection colour everywhere. */
-/* One switch for every warm token, so components never need ad-hoc dark colours to stay legible. */
 [data-workly-theme='dark'] {
   --color-workly-paper: #0c1411;
   --color-workly-card: #131d19;
@@ -178,7 +172,6 @@
 }
 
 @layer base {
-  /* Tailwind's preflight resets buttons to the default cursor; restore intent for real controls only. */
   :where(a[href], button, [role='button'], [role='tab'], [role='menuitem'], summary, select, input[type='checkbox'], input[type='radio'], input[type='file']):not(:disabled, [aria-disabled='true']) {
     cursor: pointer;
   }
@@ -197,7 +190,6 @@
   [data-workly-theme='dark'] :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline-color: var(--color-workly-dark-accent);
   }
-  /* Explicit pairs per theme: selected text stays readable on any surface, including forest panels. */
   ::selection {
     background: #0e3b2c;
     color: #f5f3ee;
@@ -214,7 +206,6 @@
   }
 }
 
-/* Scoped counterparts of the official dashboard's final cascade. */
 @utility workly-dashboard-parity {
   & > section {
     @apply border-0 dark:border;

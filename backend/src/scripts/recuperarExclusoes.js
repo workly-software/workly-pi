@@ -1,4 +1,3 @@
-// conclui exclusões de conta interrompidas sem subir a API: node src/scripts/recuperarExclusoes.js
 const mongoose = require('mongoose');
 const connectDatabase = require('../config/db');
 const { recuperarExclusoesPendentes } = require('../services/contaService');

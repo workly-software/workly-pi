@@ -9,7 +9,6 @@ export const salesConfig = () => ({
     maintainAspectRatio: false,
     legend: { display: true, position: 'bottom', labels: { fontColor: '#d6d1c4' } },
     tooltips: { mode: 'index', intersect: false },
-    // ajuste visual do gráfico no dark mode: grid mais suave e textos claros, senão fica bem apagado.
     scales: {
       yAxes: [
         {

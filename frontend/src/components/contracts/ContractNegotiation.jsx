@@ -7,7 +7,6 @@ const panel =
   'mt-3 grid max-w-[560px] gap-3 rounded-md border border-workly-rule bg-workly-paper p-3.5 dark:border-white/10 dark:bg-workly-night';
 const note = 'flex items-start gap-2 text-[0.95rem] text-workly-ink-warm';
 
-// Value negotiation for "valor a combinar": whoever has the turn approves the value on the table or proposes another.
 export function NegotiationPanel({ contract: c, onAction }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -83,7 +82,6 @@ export function NegotiationPanel({ contract: c, onAction }) {
   );
 }
 
-// While a delivery waits for confirmation the client may send it back with a reason.
 export function AdjustmentRequest({ contract: c, onAction }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');

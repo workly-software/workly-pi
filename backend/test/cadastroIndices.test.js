@@ -1,6 +1,3 @@
-// Unicidade de e-mail e CPF garantida pelo banco antes do primeiro cadastro.
-// O índice único não pode depender do autoIndex em segundo plano: se cadastros simultâneos chegarem antes
-// dele, entram duplicatas e a criação do índice passa a falhar, deixando a base sem a garantia.
 process.env.TRUST_PROXY = 'loopback';
 
 const test = require('node:test');
@@ -34,7 +31,6 @@ async function cadastrar({ email, cpf }) {
   return { status: r.status, dados: await r.json() };
 }
 
-// apaga a coleção (e os índices que o autoIndex já tenha criado), como numa base nova ou restaurada sem índices.
 async function semIndices() {
   await Usuario.collection.drop().catch(() => {});
   Usuario.configurarProtecaoCadastroParaTeste?.({ expirar: true });
@@ -42,13 +38,11 @@ async function semIndices() {
 const indicesUnicos = async () =>
   (await Usuario.collection.indexes()).filter((i) => i.unique).map((i) => Object.keys(i.key).join(',')).sort();
 
-// a ordem importa: o primeiro teste roda com a proteção ainda não verificada neste processo.
 test('base sem índices: duplicatas antigas bloqueiam o cadastro (503) até serem resolvidas', async (t) => {
   if (pular(t)) return;
   await semIndices();
   Usuario.configurarProtecaoCadastroParaTeste?.({ novaTentativaMs: 0 });
   t.after(() => Usuario.configurarProtecaoCadastroParaTeste?.({ novaTentativaMs: 30000 }));
-  // duas contas antigas com o mesmo CPF impedem criar o índice único.
   const repetido = cpfValido(4242);
   await Usuario.collection.insertMany([
     { nome: 'a', email: 'antiga1@teste.local', senha: 'x', cpf: repetido, tipoConta: 'Contratante' },
@@ -59,7 +53,6 @@ test('base sem índices: duplicatas antigas bloqueiam o cadastro (503) até sere
   assert.equal(r.dados.sucesso, false);
   assert.equal(await Usuario.countDocuments({ email: 'nova@teste.local' }), 0, 'nada é gravado sem a proteção');
 
-  // resolvida a duplicação pelo operador, o cadastro volta sozinho, sem reiniciar a API.
   await Usuario.collection.deleteOne({ email: 'antiga2@teste.local' });
   assert.equal((await cadastrar({ email: 'nova@teste.local', cpf: cpfValido(4343) })).status, 201);
   assert.deepEqual(await indicesUnicos(), ['cpf', 'email']);

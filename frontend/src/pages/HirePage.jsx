@@ -17,7 +17,6 @@ const label = 'mb-2 block text-sm font-medium text-workly-ink-warm';
 const hint = 'text-[0.8125rem] leading-relaxed text-workly-muted-warm';
 const control =
   'w-full min-w-0 rounded-md border border-workly-rule bg-workly-paper text-workly-ink-warm outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-workly-muted-warm/80 focus:border-workly-forest focus:shadow-[0_0_0_3px_rgba(14,59,44,0.12)] dark:border-white/12 dark:bg-workly-night dark:focus:border-workly-dark-accent dark:focus:shadow-[0_0_0_3px_rgba(95,211,148,0.16)]';
-// Placeholders follow the service's category so the example matches what is being hired.
 const examples = {
   1: 'Ex: Preciso de uma identidade visual para uma cafeteria de bairro: logotipo, paleta de cores e versões para redes sociais. O público é jovem e o tom deve ser acolhedor.',
   2: 'Ex: Meu site em WordPress apresenta erro no formulário de contato e lentidão no celular. Preciso do diagnóstico, da correção e de um resumo do que foi alterado.',
@@ -74,7 +73,6 @@ export default function HirePage() {
     history.length > 1 ? navigate(-1) : navigate(`/detalhe-servico?id=${encodeURIComponent(id)}`);
   async function submit(event) {
     event.preventDefault();
-    // One request per confirmation: double clicks and a reopened form cannot resend.
     if (!service || sending.current || sent) return;
     const fd = new FormData(event.currentTarget),
       detalhesPedido = String(fd.get('detalhesPedido') || '').trim();
@@ -98,11 +96,9 @@ export default function HirePage() {
         referencias: String(fd.get('referencias') || '').trim()
       });
     } catch (error) {
-      // Fields are uncontrolled and untouched, so the draft survives for a retry.
       sending.current = false;
       setBusy(false);
       if (error.status === 409) {
-        // The server already holds an active order for this service: point to it instead of retrying.
         const result = await showAuthAlert({
           icon: 'warning',
           symbol: 'fa-file-signature',
@@ -135,7 +131,6 @@ export default function HirePage() {
       confirmText: contractId ? 'Ver contrato' : 'Ver contratos',
       cancelText: 'Voltar ao serviço'
     });
-    // Replace the form entry so Back cannot reopen an already submitted order.
     if (result.isDismissed && result.dismiss === 'cancel') {
       navigate(`/detalhe-servico?id=${encodeURIComponent(id)}`, { replace: true });
       return;

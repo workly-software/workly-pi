@@ -5,7 +5,6 @@ import { showAuthAlert } from '../auth/authPresentation';
 import { uploadPhoto } from '../../services/profileService';
 import { saveStyle, cancelStyle } from './ProfileSettings';
 
-// The official crop frame is 220/280 of the preview, exported as 512px WEBP.
 export function cropGeometry(image, size, zoom, x, y) {
   const frameSize = (size * 220) / 280,
     frameStart = (size - frameSize) / 2;

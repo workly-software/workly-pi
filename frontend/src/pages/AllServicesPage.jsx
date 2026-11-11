@@ -46,7 +46,6 @@ export default function AllServicesPage() {
       });
     return () => controller.abort();
   }, [request]);
-  // Chip removal and "clear" apply immediately; the URL is the source of truth for the title.
   function apply(next, page = 1, replace = true) {
     next = { ...next, page };
     setFilters(next);
@@ -75,7 +74,6 @@ export default function AllServicesPage() {
           Encontre o profissional certo para dar vida à sua próxima ideia.
         </p>
       </header>
-      {/* The bar sticks while scrolling so search, filters and order stay in reach of the results. */}
       <div className="sticky top-0 z-20 border-y border-workly-rule bg-workly-paper/95 backdrop-blur-[6px]">
         <div className="mx-auto max-w-[1280px] px-10 py-3 legacy-max-720:px-6">
           <ServiceFilters

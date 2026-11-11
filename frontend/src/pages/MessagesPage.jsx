@@ -77,7 +77,6 @@ export default function MessagesPage() {
         if (!active) return;
         setContracts(all);
         setPreviews(conversationPreviews(all, summaries, obterUsuario() || {}, failed));
-        // On narrow screens the list is the starting view unless a contract was requested.
         const narrow = window.matchMedia('(max-width: 980px)').matches;
         const initial =
           all.find((c) => contractId(c) === requested) || (narrow ? undefined : all[0]);
@@ -184,7 +183,6 @@ export default function MessagesPage() {
   return (
     <CatalogShell title="Mensagens" footer="empty" showCategories={false} headerSearch={false}>
       <main className="mx-auto w-full max-w-[1280px] px-10 pt-8 pb-10 legacy-max-720:px-0 legacy-max-720:pt-0 legacy-max-720:pb-0">
-        {/* Two panes on desktop; on narrow screens the list and the open conversation alternate. */}
         <section className="grid h-[calc(100dvh-160px)] min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden rounded-lg border border-workly-rule bg-workly-card  legacy-max-980:grid-cols-1 legacy-max-720:h-[calc(100dvh-70px)] legacy-max-720:min-h-0 legacy-max-720:rounded-none legacy-max-720:border-0">
           <aside
             className={`grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] border-r border-workly-rule legacy-max-980:border-r-0 ${active ? 'legacy-max-980:hidden' : ''}`}

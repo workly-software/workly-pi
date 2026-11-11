@@ -69,8 +69,6 @@ function removerDadosSensiveis(usuarioMapeado) {
   if (!usuarioMapeado) return null;
   const publico = { ...usuarioMapeado };
 
-  // dados que só devem aparecer no perfil do próprio usuário logado.
-  // em cards, avaliações, contratos e serviços, mandamos só o necessário pra tela.
   [
     'email',
     'cpf',
@@ -91,12 +89,10 @@ function removerDadosSensiveis(usuarioMapeado) {
   return publico;
 }
 
-// perfil completo: usado em login/configuração/perfil do próprio usuário.
 function mapUsuario(req, usuario) {
   return montarBaseUsuario(req, usuario);
 }
 
-// perfil público: usado quando outro usuário aparece em serviços, contratos e avaliações.
 function mapUsuarioPublico(req, usuario) {
   return { ...removerDadosSensiveis(montarBaseUsuario(req, usuario)), removido: Boolean(usuario?.removido) };
 }
@@ -161,13 +157,11 @@ function mapContrato(req, contrato, usuarioAtualId = null) {
   const statusNormalizado = contrato.status === 'encerrado' ? 'concluido' : contrato.status;
   const cliente = contrato.cliente || {};
   const freelancer = contrato.freelancer || servico.freelancer || {};
-  // preco só aparece quando há valor aprovado; precoProposto é o valor que ainda aguarda resposta.
   const acordo = estadoAcordo(contrato);
   const base = {
     idContrato: contrato._id.toString(),
     idServico: servico._id ? servico._id.toString() : '',
     nomeServico: servico.nome || 'Serviço removido',
-    // false quando o serviço foi retirado do catálogo ou não existe mais: o histórico continua, a página pública não.
     servicoDisponivel: Boolean(servico._id) && !servico.removido,
     descricaoServico: servico.descricao || '',
     imagemServico: montarUrlImagem(

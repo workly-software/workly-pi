@@ -73,8 +73,6 @@ function PriceFields({ filters, onChange, prefix = 'filter' }) {
   );
 }
 
-// Compact bar on desktop (price lives in a popover); a full filter sheet on small screens.
-// Applied filters show as removable chips; removing one re-runs the search immediately.
 export default function ServiceFilters({ filters, onChange, onSubmit, onApply, count }) {
   const [priceOpen, setPriceOpen] = useState(false),
     [sheetOpen, setSheetOpen] = useState(false);

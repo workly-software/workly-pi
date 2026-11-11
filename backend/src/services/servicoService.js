@@ -6,7 +6,6 @@ const Contrato = require('../models/Contrato');
 const Favorito = require('../models/Favorito');
 const { contaPodeContratar, MARCA_EXPIRADA_MS } = require('./contaService');
 
-// serviços retirados ficam fora do catálogo; documentos antigos sem o campo contam como publicados.
 const PUBLICADO = { removido: { $ne: true } };
 
 async function servicoPodeContratar(id) {
@@ -118,7 +117,6 @@ async function consultarServicos(filtro, { ordenar, skip, limite }) {
   return anexarResumoAvaliacoes(await consulta);
 }
 
-// Calcula/faz o filtro e a ordenação no Mongo antes de paginar, sem carregar todo o catálogo na API.
 async function consultarAvaliados(filtro, { ordenar, avaliacaoMin = 0, skip, limite }) {
   const ordenacoes = {
     avaliacao: { avaliacaoMediaServico: -1, totalAvaliacoesServico: -1, createdAt: -1, _id: -1 },
@@ -254,7 +252,6 @@ async function criar({
     freelancer: freelancerId
   });
 
-  // Uma exclusão iniciada depois da primeira leitura não pode deixar um anúncio público.
   if (!(await contaPodeContratar(freelancerId))) {
     await Servico.updateOne({ _id: servico._id }, { $set: { removido: true, removidoEm: new Date() } });
     return { erro: 'conta_indisponivel' };

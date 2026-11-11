@@ -2,7 +2,6 @@ import { Link } from 'react-router';
 import SiteFooter, { FooterSection } from '../SiteFooter';
 import { sessaoIniciada } from '../../services/authService';
 
-// Only destinations that exist; legal/contact pages return once they are published.
 const link =
   'inline-flex min-h-11 w-fit items-center font-medium text-workly-text-muted underline-offset-4 transition-colors hover:text-workly-primary-ink hover:underline dark:text-[#9aa59f] dark:hover:text-workly-dark-accent';
 const paperLink =
@@ -15,7 +14,6 @@ const explore = [
     ['/sobre', 'Sobre Nós']
   ]
 ];
-// Signed-in visitors get their workspace links instead of entry points they no longer need.
 const guestAccount = [
   ['/login', 'Entrar'],
   ['/cadastro', 'Criar conta']

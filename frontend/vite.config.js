@@ -14,7 +14,6 @@ function preservePublicImages() {
     },
     async writeBundle() {
       const output = path.resolve(config.root, config.build.outDir);
-      // API responses and public image URLs use /assets/img, independently of bundled imports.
       await cp(path.resolve(config.root, 'assets/img'), path.join(output, 'assets/img'), {
         recursive: true
       });

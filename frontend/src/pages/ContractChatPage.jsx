@@ -89,7 +89,6 @@ export default function ContractChatPage() {
         }
         setContract(c);
         await loadMessages(controller.signal);
-        // closed contracts are read-only: nothing new can arrive, so there is no polling.
         if (active && !finalStatuses.includes(c.status))
           timer = setInterval(() => loadMessages(controller.signal), 30000);
       } catch (error) {
@@ -118,7 +117,6 @@ export default function ContractChatPage() {
     } catch (error) {
       if (!isCurrent() || currentId.current !== requestId) return;
       setSendError(error.message || 'Não foi possível enviar a mensagem.');
-      // the contract was closed meanwhile: switch the page to read-only.
       if (error.status === 409) setClosedByServer(true);
     } finally {
       if (isCurrent() && currentId.current === requestId) setBusy(false);

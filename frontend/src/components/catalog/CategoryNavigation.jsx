@@ -1,8 +1,6 @@
 import { Link } from 'react-router';
 import { offices } from '../home/offices';
 
-// The home's category strip, shared by every page: a photo thumbnail per craft,
-// scrollable on small screens, with the current category marked.
 export default function CategoryNavigation({ active, bordered = true }) {
   return (
     <nav

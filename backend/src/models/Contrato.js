@@ -1,10 +1,8 @@
 const mongoose = require('mongoose');
 
-// status em que o contrato ainda ocupa o par cliente + serviço; cancelado, concluído e encerrado liberam nova contratação.
 const STATUS_ATIVOS = ['pendente', 'proposta_pendente', 'proposta_aceita', 'em_andamento', 'entregue'];
 const INDICE_CONTRATO_ATIVO = 'contrato_ativo_unico_por_cliente_servico';
 
-// cada evento do acordo e das entregas fica registrado com autor, papel, valor (quando houver) e data.
 const TIPOS_EVENTO = ['proposta', 'contraproposta', 'aceite', 'entrega', 'ajuste_solicitado'];
 const eventoSchema = new mongoose.Schema(
   {
@@ -30,8 +28,6 @@ const contratoSchema = new mongoose.Schema(
     prazoDesejado: { type: String, default: '', trim: true },
     referencias: { type: String, default: '', trim: true },
     tipoContratacao: { type: String, enum: ['fixo', 'negociavel', 'combinar'], default: 'fixo' },
-    // só contratos a combinar negociam: precoProposto é o valor na mesa e preco só recebe o valor
-    // quando as duas partes aprovam. Contratos antigos não têm este campo (veja utils/acordoContrato.js).
     negociacao: {
       estado: { type: String, enum: ['aguardando_freelancer', 'aguardando_cliente', 'fechado'], default: undefined }
     },
@@ -55,8 +51,6 @@ const contratoSchema = new mongoose.Schema(
 );
 
 contratoSchema.index({ cliente: 1, servico: 1, status: 1 });
-// garante no banco um único contrato ativo por cliente e serviço, mesmo com requisições simultâneas.
-// instalado explicitamente por garantirIndicesContrato (o autoIndex fica desligado neste schema).
 contratoSchema.index(
   { cliente: 1, servico: 1 },
   {
@@ -73,7 +67,6 @@ contratoSchema.index({ servico: 1, status: 1, createdAt: -1 });
 
 const Contrato = mongoose.model('Contrato', contratoSchema);
 
-// procura pares cliente + serviço com mais de um contrato ativo; não altera nada.
 async function encontrarContratosAtivosDuplicados() {
   return Contrato.aggregate([
     { $match: { status: { $in: STATUS_ATIVOS } } },
@@ -82,7 +75,6 @@ async function encontrarContratosAtivosDuplicados() {
   ]);
 }
 
-// confere no banco se o índice existe exatamente com a definição esperada.
 async function verificarIndiceContratoAtivo() {
   let indices;
   try {
@@ -106,12 +98,9 @@ async function verificarIndiceContratoAtivo() {
   );
 }
 
-// estado da proteção neste processo. Começa fechado: sem índice verificado, não há novas contratações.
 const protecao = { disponivel: false, motivo: 'nao_verificado', verificadoEm: 0, emAndamento: null };
 const intervalos = { novaTentativaMs: 60 * 1000, revalidacaoMs: 5 * 60 * 1000 };
 
-// instala e verifica os índices do contrato. Nunca altera nem apaga contratos:
-// duplicações antigas ou falhas deixam a proteção indisponível e são devolvidas para o operador.
 async function garantirIndicesContrato() {
   let resultado;
   try {
@@ -133,7 +122,6 @@ async function garantirIndicesContrato() {
   return resultado;
 }
 
-// detalhes ficam só no log do servidor; a API responde apenas uma mensagem genérica.
 function relatarProblemaIndice(resultado, registrar = console.error) {
   if (!resultado || resultado.instalado) return;
   registrar(
@@ -148,9 +136,6 @@ function relatarProblemaIndice(resultado, registrar = console.error) {
   }
 }
 
-// usado antes de criar contratos. Indisponível: tenta reinstalar no máximo uma vez por intervalo,
-// assim conflitos resolvidos manualmente voltam a liberar pedidos sem reiniciar a API.
-// Disponível: revalida de tempos em tempos, caso o índice tenha sido removido do banco.
 async function protecaoContratosDisponivel() {
   if (protecao.emAndamento) return protecao.emAndamento;
   const decorrido = Date.now() - protecao.verificadoEm;
@@ -185,7 +170,6 @@ function estadoProtecaoContratos() {
   return { disponivel: protecao.disponivel, motivo: protecao.motivo };
 }
 
-// só para testes: ajusta intervalos e força a próxima verificação.
 function configurarProtecaoParaTeste({ novaTentativaMs, revalidacaoMs, expirar } = {}) {
   if (novaTentativaMs !== undefined) intervalos.novaTentativaMs = novaTentativaMs;
   if (revalidacaoMs !== undefined) intervalos.revalidacaoMs = revalidacaoMs;

@@ -1,6 +1,5 @@
 import { Link } from 'react-router';
 
-// Press feedback is transform-only so it stays cheap and never shifts layout.
 const base =
   'inline-flex items-center justify-center gap-2 font-semibold transition-[background-color,border-color,color,transform] duration-150 ease-workly-out motion-safe:active:scale-[0.97]';
 const variants = {
@@ -19,7 +18,6 @@ const sizes = {
   lg: 'min-h-12 px-6 text-[1.0625rem]'
 };
 
-// Shape is a parameter rather than a className override so two radius utilities never collide.
 export const buttonStyles = (variant = 'primary', size = 'md', shape = 'rounded-lg') =>
   `${base} ${shape} ${variants[variant]} ${sizes[size]}`;
 

@@ -1,21 +1,19 @@
 const mongoose = require('mongoose');
 
-// tipos de notificação disponíveis no sistema.
-// cada tipo mapeia para um evento do ciclo de vida de contrato ou avaliação.
 const TIPOS_VALIDOS = [
   'contrato_novo',
-  'proposta_nova', // contratação negociável recebida pelo freelancer
-  'proposta_aceita', // cliente recebe quando freelancer aceita
-  'proposta_recusada', // cliente recebe quando freelancer recusa
-  'proposta_valor', // a outra parte recebe uma nova proposta ou contraproposta de valor
-  'valor_aprovado', // freelancer recebe quando o cliente aprova a contraproposta
-  'ajuste_solicitado', // freelancer recebe quando o cliente pede ajustes na entrega
-  'trabalho_iniciado', // cliente recebe quando freelancer inicia
-  'entrega_realizada', // cliente recebe quando freelancer entrega
-  'entrega_confirmada', // freelancer recebe quando o cliente confirma a entrega
-  'contrato_cancelado', // a outra parte recebe quando alguém cancela
-  'avaliacao_recebida', // freelancer recebe quando cliente avalia
-  'mensagem_nova' // destinatário recebe quando alguém envia mensagem no chat
+  'proposta_nova',
+  'proposta_aceita',
+  'proposta_recusada',
+  'proposta_valor',
+  'valor_aprovado',
+  'ajuste_solicitado',
+  'trabalho_iniciado',
+  'entrega_realizada',
+  'entrega_confirmada',
+  'contrato_cancelado',
+  'avaliacao_recebida',
+  'mensagem_nova'
 ];
 
 const notificacaoSchema = new mongoose.Schema(
@@ -25,7 +23,6 @@ const notificacaoSchema = new mongoose.Schema(
     titulo: { type: String, required: true, trim: true },
     mensagem: { type: String, required: true, trim: true },
     lida: { type: Boolean, default: false },
-    // referência opcional ao documento que gerou a notificação (contrato, avaliação etc.)
     referenciaId: { type: mongoose.Schema.Types.ObjectId, default: null },
     tipoReferencia: {
       type: String,
@@ -36,7 +33,6 @@ const notificacaoSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// índice para buscar notificações de um usuário ordenadas por data, filtrando não-lidas.
 notificacaoSchema.index({ destinatario: 1, lida: 1, createdAt: -1 });
 notificacaoSchema.index({ destinatario: 1, tipo: 1, referenciaId: 1, lida: 1 });
 

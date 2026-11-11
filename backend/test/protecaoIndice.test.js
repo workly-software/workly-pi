@@ -1,5 +1,3 @@
-// A proteção contra contratos duplicados é "fail-closed": sem o índice único verificado,
-// pedidos e propostas recebem 503, consultas continuam funcionando e nenhum registro é alterado.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { iniciarAmbiente } = require('./helpers/apiTeste');
@@ -32,7 +30,6 @@ const propor = (servico) =>
 async function removerIndice() {
   await Contrato.collection.dropIndex(Contrato.INDICE_CONTRATO_ATIVO).catch(() => {});
 }
-// consultas seguem disponíveis mesmo com a criação bloqueada.
 async function consultasDisponiveis() {
   assert.equal((await amb.chamar('GET', '/api/contratos/meus', cliente)).status, 200);
   assert.equal((await amb.chamar('GET', '/api/servicos')).status, 200);
@@ -47,7 +44,6 @@ test('a proteção começa fechada e nada é criado sem verificação bem-sucedi
   if (pular(t)) return;
   silenciar(t);
   assert.deepEqual(Contrato.estadoProtecaoContratos(), { disponivel: false, motivo: 'nao_verificado' });
-  // o primeiro pedido dispara a verificação; se ela falhar, o pedido é recusado.
   const falha = t.mock.method(Contrato, 'createIndexes', async () => {
     throw new Error('instalação indisponível');
   });
@@ -96,7 +92,6 @@ test('duplicações preexistentes: nada é alterado, criação bloqueada e liber
   simultaneos.forEach(bloqueado);
   await consultasDisponiveis();
 
-  // resolução manual (aqui: cancelar um dos contratos de teste) e nova tentativa liberada.
   await Contrato.collection.updateOne({ _id: insertedIds[1] }, { $set: { status: 'cancelado' } });
   Contrato.configurarProtecaoParaTeste({ novaTentativaMs: 0, expirar: true });
   assert.equal((await pedir(await servicoFixo())).status, 201);

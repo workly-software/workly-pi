@@ -1,4 +1,3 @@
-// M-02: trocar o e-mail exige a senha atual e encerra as outras sessões; editar o resto do perfil não exige.
 process.env.TRUST_PROXY = 'loopback';
 
 const test = require('node:test');

@@ -60,16 +60,12 @@ function ehFreelancer(contrato, userId) {
   return String(contrato.freelancer) === String(userId);
 }
 
-// busca nome do serviço para notificação: usa o dado já populado se disponível,
-// senão faz uma query leve só com o campo nome.
 async function obterNomeServico(contrato) {
   if (contrato?.servico?.nome) return contrato.servico.nome;
   const s = await Servico.findById(contrato.servico).select('nome');
   return s?.nome || 'Serviço';
 }
 
-// carrega o contrato e já confere se o usuário logado participa dele.
-// isso evita repetir a mesma checagem em aceitar, cancelar, iniciar e entregar.
 async function carregarContratoAutorizado(req, res) {
   const userId = usuarioDoToken(req);
   if (!idMongoValido(req.params.id)) {
@@ -95,11 +91,8 @@ async function carregarContratoAutorizado(req, res) {
   return { contrato, userId };
 }
 
-// cria uma contratação nova.
-// aqui também nasce o fluxo de proposta quando o serviço é valor a combinar.
 exports.criar = async (req, res) => {
   try {
-    // a consulta prévia abaixo não basta contra pedidos simultâneos: sem o índice único verificado, nada é criado.
     if (!(await Contrato.protecaoContratosDisponivel())) {
       return erro(res, 503, MENSAGEM_INDISPONIVEL);
     }
@@ -117,7 +110,6 @@ exports.criar = async (req, res) => {
     if (!idMongoValido(servicoId)) return erro(res, 400, 'Identificador de serviço inválido.');
     const servico = await Servico.findById(servicoId).populate('freelancer');
     if (!servico) return erro(res, 404, 'Serviço não encontrado.');
-    // serviço retirado, ou de freelancer removido/inexistente, não aceita novos pedidos.
     if (servico.removido || !servico.freelancer || servico.freelancer.removido) {
       return erro(res, 409, MENSAGEM_SERVICO_INDISPONIVEL);
     }
@@ -136,7 +128,6 @@ exports.criar = async (req, res) => {
       return erro(res, 400, 'Informe os detalhes do serviço antes de concluir a contratação.');
     }
 
-    // no preço fixo o valor vem do serviço e qualquer valor enviado pelo cliente é ignorado.
     if (tipoContratacao === 'combinar' && validacaoValor.erro) {
       return erro(res, 400, validacaoValor.erro);
     }
@@ -159,7 +150,6 @@ exports.criar = async (req, res) => {
       return erro(res, 409, MENSAGEM_SERVICO_INDISPONIVEL);
     }
 
-    // a combinar: preco só é preenchido quando as duas partes aprovarem um valor.
     const contrato = await Contrato.create({
       cliente: userId,
       freelancer: servico.freelancer._id,
@@ -182,14 +172,11 @@ exports.criar = async (req, res) => {
         : {})
     });
 
-    // Exclusão de conta e retirada de anúncio marcam o recurso antes de procurar contratos ativos.
-    // Se uma marca apareceu durante a gravação, este pedido recém-criado é desfeito antes de responder.
     if (!(await Promise.all([...partes.map(contaPodeContratar), servicoPodeContratar(servico._id)])).every(Boolean)) {
       await Contrato.deleteOne({ _id: contrato._id });
       return erro(res, 409, MENSAGEM_SERVICO_INDISPONIVEL);
     }
 
-    // a notificação só sai depois que o contrato existe; uma falha nela não desfaz o pedido.
     await notificarDepois(() =>
       notificarContratoNovo(servico.freelancer._id, contrato._id, servico.nome, tipoContratacao)
     );
@@ -203,7 +190,6 @@ exports.criar = async (req, res) => {
       mapContrato(req, completo, userId)
     );
   } catch (error) {
-    // pedidos simultâneos: o índice único parcial deixa passar só o primeiro.
     if (error?.code === 11000) return erro(res, 409, MENSAGEM_DUPLICADO);
     console.error(error);
     return erro(res, 500, 'Erro ao criar contratação.');
@@ -227,7 +213,6 @@ exports.meus = async (req, res) => {
       .lean();
 
     const contratosAvaliados = new Set(avaliacoes.map((a) => String(a.contrato)));
-    // o cliente avalia cada serviço uma vez: um novo contrato do mesmo serviço não abre outra avaliação.
     const servicosAvaliados = new Set(avaliacoes.map((a) => String(a.servico)));
     return sucesso(
       res,
@@ -250,8 +235,6 @@ exports.meus = async (req, res) => {
   }
 };
 
-
-// mensagem única para quando outra requisição mudou o contrato entre a leitura e a gravação.
 const MENSAGEM_CONFLITO =
   'Este contrato acabou de ser atualizado por outra ação. Atualize a página para ver a situação atual.';
 const MENSAGEM_SEM_ACORDO =
@@ -264,8 +247,6 @@ const PODE_CANCELAR = {
   freelancer: ['pendente', 'proposta_pendente', 'proposta_aceita', 'em_andamento']
 };
 
-// notificações só depois da gravação. Se falharem, a transição continua válida e só registramos a falha,
-// para o cliente da API não repetir uma ação que já foi aplicada.
 async function notificarDepois(enviar) {
   try {
     await enviar();
@@ -283,12 +264,6 @@ async function notificarEResponder(req, res, atualizado, userId, mensagem, notif
   return sucesso(res, 200, mensagem, mapContrato(req, completo || atualizado, userId));
 }
 
-// aplica uma transição de forma atômica: só grava se o contrato ainda estiver no status lido
-// e o usuário continuar no papel exigido. Assim duas ações concorrentes nunca se sobrescrevem.
-// definicao: { papel(contrato, userId) -> 'cliente' | 'freelancer' | null, erroPapel,
-//   de(papel) -> status permitidos, erroStatus, codigoErroStatus, exigeAcordo, validar(req) -> { erro } | dados,
-//   para(contrato), extra(contrato), evento(contrato, entrada) -> item do histórico,
-//   mensagem(contrato), notificar(contrato, userId, nomeServico) }
 async function executarTransicao(req, res, definicao, dadosCarregados) {
   const dados = dadosCarregados || (await carregarContratoAutorizado(req, res));
   if (!dados) return;
@@ -299,7 +274,6 @@ async function executarTransicao(req, res, definicao, dadosCarregados) {
   if (!definicao.de(papel).includes(contrato.status)) {
     return erro(res, definicao.codigoErroStatus || 400, definicao.erroStatus);
   }
-  // um acordo fechado nunca volta atrás, então a leitura basta para esta checagem.
   if (definicao.exigeAcordo && estadoAcordo(contrato).estado !== 'fechado') {
     return erro(res, 409, MENSAGEM_SEM_ACORDO);
   }
@@ -322,10 +296,6 @@ async function executarTransicao(req, res, definicao, dadosCarregados) {
   return notificarEResponder(req, res, atualizado, userId, definicao.mensagem(contrato), definicao.notificar);
 }
 
-// negociação de valor dos contratos a combinar. Só quem está na vez propõe ou aprova
-// (no contrato antigo pendente de acordo, qualquer parte propõe e ninguém aprova sozinho).
-// A gravação é condicionada ao status, ao estado da negociação e aos valores lidos: duas ações simultâneas
-// nunca se sobrepõem, e o valor aprovado é exatamente o que estava na mesa.
 async function negociarValor(req, res, acao, dados) {
   const { contrato, userId } = dados;
   const papel = ehCliente(contrato, userId) ? 'cliente' : 'freelancer';
@@ -359,7 +329,6 @@ async function negociarValor(req, res, acao, dados) {
     if (vez === 'ambos' || !acordo.valorEmNegociacao) {
       return erro(res, 409, 'Ainda não há um valor proposto para aprovar. Envie uma proposta de valor.');
     }
-    // quem aprova pode mandar o valor que viu na tela; se for outro, nada é gravado.
     const visto = req.body?.valor;
     if (visto !== undefined && visto !== null && visto !== '') {
       const conferido = validarValor(visto);
@@ -399,7 +368,6 @@ async function negociarValor(req, res, acao, dados) {
   return notificarEResponder(req, res, atualizado, userId, mensagem, notificar);
 }
 
-// o freelancer aceita a proposta de um contrato a combinar: é a aprovação do valor que está na mesa.
 async function aceitarPropostaACombinar(req, res, dados, erroStatus) {
   if (!ehFreelancer(dados.contrato, dados.userId)) {
     return erro(res, 403, 'Somente o freelancer pode aceitar a proposta.');
@@ -418,8 +386,6 @@ const somenteCliente = (erroPapel) => ({
 });
 
 const TRANSICOES = {
-  // freelancer aceita um pedido de preço fixo, que já entra em andamento.
-  // contratos a combinar passam por aceitarPropostaACombinar.
   aceitar: {
     ...somenteFreelancer('Somente o freelancer pode aceitar a proposta.'),
     de: () => ['proposta_pendente', 'pendente'],
@@ -454,7 +420,6 @@ const TRANSICOES = {
     notificar: (contrato, _userId, nomeServico) =>
       notificarTrabalhoIniciado(contrato.cliente, contrato._id, nomeServico)
   },
-  // o freelancer entrega (de novo, depois de um ajuste); só o cliente confirma o recebimento.
   entregar: {
     ...somenteFreelancer('Somente o freelancer pode finalizar a entrega.'),
     de: () => ['proposta_aceita', 'em_andamento'],
@@ -466,8 +431,6 @@ const TRANSICOES = {
     notificar: (contrato, _userId, nomeServico) =>
       notificarEntregaRealizada(contrato.cliente, contrato._id, nomeServico)
   },
-  // confirmar e solicitar ajuste partem de "entregue" e gravam condicionados a esse status:
-  // se as duas chegarem juntas, só uma vence e a outra recebe 409 (ou 400, se chegar depois).
   confirmar: {
     ...somenteCliente('Somente o cliente pode confirmar a entrega.'),
     de: () => ['entregue'],
@@ -475,7 +438,6 @@ const TRANSICOES = {
     exigeAcordo: true,
     para: () => 'concluido',
     mensagem: () => 'Entrega confirmada. Contrato concluído.',
-    // executarTransicao só chama notificar depois que a gravação condicional venceu.
     notificar: (contrato, _userId, nomeServico) =>
       notificarEntregaConfirmada(contrato.freelancer, contrato._id, nomeServico)
   },
@@ -557,8 +519,6 @@ exports.cancelar = rotaDeTransicao('cancelar', 'Erro ao cancelar contrato.');
 exports.proporValor = rotaDeNegociacao('propor', 'Erro ao enviar proposta de valor.');
 exports.aprovarValor = rotaDeNegociacao('aceitar', 'Erro ao aprovar valor.');
 
-// compatibilidade com o front antigo: PATCH /status vira uma das transições acima,
-// com as mesmas permissões, mensagens, regras de acordo e a mesma gravação atômica.
 const ACEITAR_PROPOSTA_ANTIGA = {
   ...somenteFreelancer('Sem permissão para fazer esta ação.'),
   de: () => ['proposta_pendente'],
@@ -578,7 +538,6 @@ const INICIAR_ANTIGO = {
   mensagem: () => 'Contrato iniciado.',
   notificar: TRANSICOES.iniciar.notificar
 };
-// no fluxo antigo, "em andamento" sobre proposta pendente significa aceitar a proposta.
 const EM_ANDAMENTO_ANTIGO = {
   ...INICIAR_ANTIGO,
   de: () => ['pendente', 'proposta_aceita', 'proposta_pendente'],
@@ -603,7 +562,6 @@ exports.atualizarStatus = async (req, res) => {
     if (status === 'cancelado') return await executarTransicao(req, res, TRANSICOES.cancelar, dados);
     if (status === 'concluido') return await executarTransicao(req, res, TRANSICOES.confirmar, dados);
     const { contrato } = dados;
-    // aceitar proposta a combinar pela rota antiga segue a mesma regra de acordo da rota nova.
     if (contrato.tipoContratacao === 'combinar' && (status === 'proposta_aceita' || contrato.status === 'proposta_pendente')) {
       return await aceitarPropostaACombinar(req, res, dados, ACEITAR_PROPOSTA_ANTIGA.erroStatus);
     }

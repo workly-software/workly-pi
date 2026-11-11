@@ -1,10 +1,7 @@
-// valida o corpo do PUT /perfil antes de qualquer consulta: só tipos escalares e formatos esperados.
-// devolve { campos } prontos para salvar ou { erro } com a mensagem para o usuário.
 const { obterCampo } = require('./requisicaoUtils');
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// [campo no banco, aliases aceitos, tamanho máximo, formato]
 const TEXTOS = [
   ['nome', ['nome'], 120, 'obrigatorio'],
   ['email', ['email'], 160, 'email'],

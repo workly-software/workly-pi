@@ -36,10 +36,6 @@ function deveExcluirNotificacoesDeMensagem(req) {
   );
 }
 
-// lista as notificações do usuário logado, mais recentes primeiro.
-// aceita ?lida=false para trazer apenas as não lidas.
-// busca as notificações do usuário logado.
-// o front usa isso no dropdown do sino.
 exports.listar = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -48,8 +44,6 @@ exports.listar = async (req, res) => {
     if (req.query.lida === 'false') filtro.lida = false;
     if (req.query.lida === 'true') filtro.lida = true;
 
-    // Mensagens já entram no sininho pelo contador real de mensagens não lidas.
-    // Quando o front pede para excluir mensagens, evita listar/contar a mesma coisa duas vezes.
     if (deveExcluirNotificacoesDeMensagem(req)) {
       filtro.tipo = { $ne: 'mensagem_nova' };
     }
@@ -75,10 +69,6 @@ exports.listar = async (req, res) => {
   }
 };
 
-// retorna a contagem de notificações comuns não lidas.
-// Importante: mensagem_nova fica fora daqui porque o sino soma mensagens reais
-// pela rota /api/mensagens/nao-lidas. Se contar mensagem_nova aqui também,
-// o badge vira 2 quando existe só 1 mensagem não lida.
 exports.contarNaoLidas = async (req, res) => {
   try {
     const total = await Notificacao.countDocuments({
@@ -94,8 +84,6 @@ exports.contarNaoLidas = async (req, res) => {
   }
 };
 
-// marca uma notificação específica como lida.
-// Se a notificação for de mensagem, também marca a mensagem real como lida.
 exports.marcarLida = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -122,8 +110,6 @@ exports.marcarLida = async (req, res) => {
   }
 };
 
-// marca como lidas as notificações de uma área inteira.
-// Usado quando o usuário clica no sino e abre Contratos ou Mensagens.
 exports.marcarContextoLidas = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -134,7 +120,6 @@ exports.marcarContextoLidas = async (req, res) => {
       return erro(res, 400, 'Contexto inválido para limpar notificações.');
     }
 
-    // só aceita um id escalar; objetos ou arrays seriam interpretados como operadores do MongoDB.
     if (referenciaBruta !== null && referenciaBruta !== '' && !idMongoValido(referenciaBruta)) {
       return erro(res, 400, 'Referência inválida.');
     }
@@ -168,7 +153,6 @@ exports.marcarContextoLidas = async (req, res) => {
       const resultadoNotificacoes = await Notificacao.updateMany(filtroNotificacao, { lida: true });
       notificacoesAtualizadas = resultadoNotificacoes.modifiedCount || 0;
 
-      // mensagens só mudam dentro de contratos do usuário e quando foram recebidas por ele.
       const contratoIds = await contratosDoUsuario(userId);
       if (referenciaId) {
         const resultadoMensagem = contratoIds.length
@@ -200,8 +184,6 @@ exports.marcarContextoLidas = async (req, res) => {
   }
 };
 
-// marca todas as notificações do usuário como lidas de uma vez.
-// Também limpa mensagens não lidas para o número do sino realmente zerar.
 exports.marcarTodasLidas = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -227,7 +209,6 @@ exports.marcarTodasLidas = async (req, res) => {
   }
 };
 
-// remove uma notificação específica do usuário.
 exports.remover = async (req, res) => {
   try {
     if (!idMongoValido(req.params.id)) return erro(res, 400, 'Identificador de notificação inválido.');

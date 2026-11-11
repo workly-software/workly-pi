@@ -52,7 +52,6 @@ function Steps({ status }) {
   );
 }
 
-// A contract reads as a row: what, with whom, status and value, then the next step.
 export default function ContractCard({ contract: c, onAction, onReview }) {
   const other = c.papel === 'cliente' ? c.freelancer : c.cliente,
     [priceIcon, price] = contractPrice(c),
@@ -157,7 +156,6 @@ export default function ContractCard({ contract: c, onAction, onReview }) {
         ))}
       </div>
       <div className="-mt-2 -ml-2.5 flex flex-wrap items-center gap-1 sm:col-start-2 lg:row-start-2">
-        {/* closed contracts keep the conversation readable in the contract chat page. */}
         <Link
           to={finalStatuses.includes(c.status) ? `/contrato-chat?id=${c.idContrato}` : `/mensagens?contrato=${c.idContrato}`}
           className="inline-flex min-h-10 items-center gap-2 rounded-md px-2.5 text-sm font-medium transition-colors text-workly-primary-ink hover:bg-workly-primary-tint"

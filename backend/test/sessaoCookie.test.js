@@ -1,4 +1,3 @@
-// M-04: sessão em cookie HttpOnly (24 h), proteção contra CSRF e logout que revoga o token no servidor.
 process.env.TRUST_PROXY = 'loopback';
 
 const test = require('node:test');
@@ -29,7 +28,6 @@ function pular(t) {
   return false;
 }
 
-// navegador simulado: envia o cookie e, quando "aplicativo", o cabeçalho que o frontend sempre manda.
 async function req(metodo, rota, { cookie, bearer, corpo, aplicativo = true, form, extra = {} } = {}) {
   const headers = { 'X-Forwarded-For': `198.19.0.${(ip += 1) % 250}`, ...extra };
   if (aplicativo) headers['X-Workly-Requisicao'] = '1';
@@ -83,7 +81,6 @@ test('sessão por cookie exige o cabeçalho da aplicação (CSRF); Bearer contin
   assert.equal((await perfil({ cookie: sessao })).status, 200);
   const semCabecalho = await perfil({ cookie: sessao, aplicativo: false });
   assert.equal(semCabecalho.status, 403, 'pedido disparado por outro site (sem o cabeçalho) é recusado');
-  // ações que mudam dados também.
   const forjado = await req('PUT', '/api/usuarios/perfil', { cookie: sessao, aplicativo: false, corpo: { bio: 'csrf' } });
   assert.equal(forjado.status, 403);
   assert.notEqual((await Usuario.findById(usuario._id).lean()).bio, 'csrf');
@@ -140,7 +137,7 @@ test('logout sem sessão, com token inválido ou repetido responde 200', async (
 test('token antigo sem jti: o logout encerra todas as sessões da conta', async (t) => {
   if (pular(t)) return;
   const usuario = await amb.criarUsuario();
-  const antigo = amb.token(usuario); // emitido como nas versões anteriores, sem jti
+  const antigo = amb.token(usuario);
   assert.equal(jwt.decode(antigo).jti, undefined);
   assert.equal((await perfil({ bearer: antigo })).status, 200);
   assert.equal((await req('POST', '/api/autenticacao/logout', { bearer: antigo })).status, 200);

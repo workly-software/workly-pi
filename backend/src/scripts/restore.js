@@ -1,6 +1,3 @@
-// npm run restore -- <pasta-do-backup> --confirmar <nome-da-base> --manutencao-confirmada [--incluir-uploads]
-//   [--permitir-reintroducao-excluidos --confirmar-reintroducao "REINTRODUZIR CONTAS EXCLUIDAS"]
-// Restaura na base de MONGO_URI. Operação destrutiva: exige confirmação e manutenção.
 const { restaurarBackup, mascarar, segredosDa } = require('./backupRestore');
 
 function lerArgumentos(argv) {

@@ -15,7 +15,6 @@ export async function myContracts() {
 export function contractAction(id, action, body) {
   return apiRequest(`/api/contratos/${id}/${action}`, body ? json(body) : { method: 'POST' });
 }
-// value negotiation (valor a combinar) and delivery adjustments.
 export function proposeValue(id, valor) {
   return contractAction(id, 'propor-valor', { valor });
 }
@@ -43,7 +42,6 @@ export function contractStatus(status = '') {
     }[status] || String(status).replace('_', ' ')
   );
 }
-// combinar contracts negotiate in the card's panel; until both sides approve a value the work cannot move on.
 export function negotiationOpen(c) {
   return (
     c.tipoContratacao === 'combinar' &&
@@ -102,7 +100,6 @@ export function contractPrice(c) {
     ];
   return ['fa-money-bill-wave', formatCurrency(c.preco || 0)];
 }
-// one review per client and service: hiring the same service again does not open another review.
 const serviceReviewed = (c) => Boolean(c.servicoJaAvaliado || c.servico_ja_avaliado);
 export function canReview(c) {
   return (
@@ -114,7 +111,6 @@ export function canReview(c) {
   );
 }
 export function contractFeedback(c) {
-  // the negotiation panel explains whose turn it is.
   if (negotiationOpen(c)) return null;
   if (c.papel === 'cliente' && (c.status === 'encerrado' || c.jaAvaliado || c.ja_avaliado))
     return ['fa-circle-check', 'Avaliação enviada. Contrato encerrado.', true];

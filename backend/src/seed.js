@@ -12,7 +12,6 @@ const Mensagem = require('./models/Mensagem');
 const Notificacao = require('./models/Notificacao');
 const { gerarCpfValido } = require('./utils/cpfUtils');
 
-// senha padrão dos usuários demo.
 const SENHA_DEMO = '12345678';
 const DOMINIO_DEMO = '@demo.workly';
 const TOTAL_USUARIOS_DEMO = 100;
@@ -470,8 +469,6 @@ async function obterCategorias() {
 }
 
 async function criarUsuarioSeNaoExistir(dados, senhaHash) {
-  // Procura por email ou CPF para permitir atualizar usuários demo antigos.
-  // Antes os emails tinham sufixo .freela01/.cliente01; agora ficam só nome.sobrenome@demo.workly.
   const usuarioExistente = await Usuario.findOne({
     $or: [{ email: dados.email }, { cpf: dados.cpf }]
   });
@@ -583,16 +580,12 @@ async function recalcularAvaliacoesFreelancers(freelancers) {
   }
 }
 
-// popula o banco com dados de teste.
-// bom pra apresentação porque já abre com usuário, serviço, contrato, avaliação e mensagem.
 async function popularBancoDemo() {
   garantirArquivosDemo();
 
   const categorias = await obterCategorias();
   const senhaHash = await bcrypt.hash(SENHA_DEMO, 10);
 
-  // Migração simples para versões antigas do seed: 'encerrado' passa a ser tratado como 'concluido'.
-  // Assim a interface fica com apenas um status final positivo.
   await Contrato.updateMany({ status: 'encerrado' }, { $set: { status: 'concluido' } });
 
   const usuariosDemoExistentes = await Usuario.countDocuments({
@@ -703,7 +696,7 @@ async function popularBancoDemo() {
     const freelancer = freelancers[i];
     const area = freelancer.areaAtuacao;
     const modelos = SERVICOS_POR_AREA[area] || SERVICOS_POR_AREA.Programação;
-    const quantidade = 2 + (i % 2); // 150 serviços no total para 60 freelancers
+    const quantidade = 2 + (i % 2);
 
     for (let j = 0; j < quantidade; j += 1) {
       const modelo = escolher(modelos, i + j);
@@ -729,8 +722,6 @@ async function popularBancoDemo() {
   }
 
   const contratos = [];
-  // Ciclo com boa quantidade de contratos concluídos para permitir 100+ avaliações no seed.
-  // O status 'encerrado' foi removido da experiência visual para não duplicar o sentido de 'concluído'.
   const statusCiclo = [
     'concluido',
     'concluido',
@@ -811,8 +802,6 @@ async function popularBancoDemo() {
     await criarFavoritoSeNaoExistir(cliente._id, servico._id);
   }
 
-  // Mensagens reais de chat para demonstrar coleção de mensagens, índices e aggregations.
-  // Não é notificação artificial: são conversas vinculadas a contratos.
   const statusChatAtivo = ['pendente', 'proposta_pendente', 'proposta_aceita', 'em_andamento'];
   const contratosComChat = contratos
     .filter((contrato) => statusChatAtivo.includes(contrato.status))
@@ -834,15 +823,12 @@ async function popularBancoDemo() {
       contrato: contrato._id,
       remetente: contrato.freelancer,
       texto: `Demo Workly: Recebi o pedido e já vou analisar o escopo #${String(i + 1).padStart(3, '0')}.`,
-      // algumas mensagens ficam não lidas para testar o sininho, mas somente em contratos com chat ativo.
       lida: i % 9 !== 0,
       createdAt: dataMesesAtras(i % 6, 6 + (i % 20)),
       updatedAt: dataMesesAtras(i % 6, 6 + (i % 20))
     });
   }
 
-  // Poucas notificações de exemplo, só para o sininho aparecer na apresentação.
-  // Notificação é evento temporário, então não faz sentido criar 100 documentos fake.
   for (let i = 0; i < 12; i += 1) {
     const contrato = contratos[i];
     await criarNotificacaoDemoSeNaoExistir({

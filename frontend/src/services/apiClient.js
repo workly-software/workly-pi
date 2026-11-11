@@ -1,8 +1,5 @@
 const API_BASE_URL = String(import.meta.env?.VITE_API_URL || '').replace(/\/$/, '');
 
-// The session token lives in an HttpOnly cookie that scripts cannot read; the browser sends it with
-// same-origin requests. The header below proves the call came from this app (CSRF protection).
-// localStorage only keeps "sessao", a non-secret marker of the current login, and the cached user.
 export async function apiRequest(path, options = {}) {
   const session = localStorage.getItem('sessao');
   const headers = { 'X-Workly-Requisicao': '1', ...(options.headers || {}) };
@@ -26,7 +23,6 @@ export async function apiRequest(path, options = {}) {
       response.status === 401 &&
       session &&
       (path === '/api/usuarios/perfil' || /token/i.test(message));
-    // a late 401 from an older login must not end a newer one.
     if (isSessionFailure && localStorage.getItem('sessao') === session) {
       localStorage.removeItem('sessao');
       localStorage.removeItem('user');

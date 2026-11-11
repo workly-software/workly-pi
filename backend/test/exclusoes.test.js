@@ -1,4 +1,3 @@
-// Bloco 3: exclusão de conta por anonimização (A4) e exclusão lógica de serviço (M4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -102,14 +101,12 @@ test('exclusão anonimiza, encerra sessões, retira serviços e preserva o hist�
   assert.equal(fs.existsSync(path.join(PERFIS, foto)), false, 'a foto própria é apagada');
   assert.equal(fs.existsSync(path.join(PERFIS, 'perfil_padrao.svg')), true, 'a imagem padrão continua');
 
-  // sessões e login
   const antigo = await amb.chamar('GET', '/api/contratos/meus', freelancer);
   assert.equal(antigo.status, 401);
   assert.match(antigo.dados.mensagem, /token/i);
   const login = await amb.chamar('POST', '/api/autenticacao/login', undefined, { email: freelancer.email, senha: SENHA });
   assert.equal(login.status, 401);
 
-  // catálogo e contratação
   assert.equal((await Servico.findById(servico._id)).removido, true);
   const catalogo = await amb.chamar('GET', '/api/servicos');
   assert.ok(!catalogo.dados.dados.some((item) => item.idServico === String(servico._id)));
@@ -119,7 +116,6 @@ test('exclusão anonimiza, encerra sessões, retira serviços e preserva o hist�
   assert.equal(pedido.status, 409);
   assert.equal((await amb.chamar('GET', `/api/usuarios/publico/${freelancer._id}`)).status, 404);
 
-  // histórico da outra parte
   const meus = await amb.chamar('GET', '/api/contratos/meus', cliente);
   assert.equal(meus.status, 200);
   const historico = meus.dados.dados.find((item) => item.idContrato === String(concluido._id));
@@ -131,7 +127,6 @@ test('exclusão anonimiza, encerra sessões, retira serviços e preserva o hist�
   assert.equal(await Avaliacao.countDocuments({ freelancer: freelancer._id }), 1);
   assert.equal(await Mensagem.countDocuments({ contrato: concluido._id }), 1);
   assert.equal(await Contrato.countDocuments({ freelancer: freelancer._id }), 2);
-  // contrato encerrado: o histórico do chat continua legível, mas novos envios são recusados.
   const chat = await amb.chamar('GET', `/api/mensagens/contrato/${concluido._id}`, cliente);
   assert.equal(chat.status, 200, 'chat de contrato encerrado continua legível');
   assert.equal(chat.dados.dados.length, 1);
@@ -141,7 +136,6 @@ test('exclusão anonimiza, encerra sessões, retira serviços e preserva o hist�
   assert.equal(await Mensagem.countDocuments({ contrato: concluido._id }), 1);
   assert.equal((await amb.chamar('GET', '/api/usuarios/perfil', cliente)).status, 200);
 
-  // e-mail e CPF reais ficam livres para um novo cadastro
   const recadastro = await amb.chamar('POST', '/api/autenticacao/cadastro', undefined, {
     nome: 'Nova conta', email: freelancer.email, senha: SENHA, cpf: freelancer.cpf, tipoConta: 'Contratante'
   });
@@ -234,7 +228,6 @@ test('exclusão de conta e criação de contrato em paralelo nunca deixam contra
   for (let rodada = 0; rodada < 12; rodada += 1) {
     const [freelancer, cliente] = [await amb.criarUsuario('Freelancer'), await amb.criarUsuario()];
     const servico = await novoServico(freelancer);
-    // alterna quem está sendo excluído: o freelancer dono do serviço ou o próprio cliente.
     const excluido = rodada % 2 ? cliente : freelancer;
     const [exclusao, pedido] = await Promise.all([
       excluir(excluido),
@@ -257,7 +250,6 @@ test('pedido gravado depois que a exclusão começou é desfeito pela segunda ch
   if (pular(t)) return;
   const [freelancer, cliente] = [await amb.criarUsuario('Freelancer'), await amb.criarUsuario()];
   const servico = await novoServico(freelancer);
-  // simula a corrida exata: a exclusão marca a conta entre a primeira checagem e a gravação do pedido.
   const criarOriginal = Contrato.create.bind(Contrato);
   t.mock.method(Contrato, 'create', async (...args) => {
     const criado = await criarOriginal(...args);

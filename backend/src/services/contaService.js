@@ -12,14 +12,8 @@ const { TEMPLATES } = require('../utils/notificacaoUtils');
 
 const FOTO_PADRAO = '/uploads/perfis/perfil_padrao.svg';
 const NOME_REMOVIDO = 'Usuário removido';
-// a marca de verificação só cobre a checagem de contratos ativos; se o processo cair antes da
-// confirmação, ela expira e a conta volta ao normal, porque nada destrutivo aconteceu ainda.
 const MARCA_EXPIRADA_MS = 5 * 60 * 1000;
 
-// regra técnica do projeto: excluir a conta anonimiza o registro em vez de apagá-lo,
-// preservando contratos encerrados, avaliações e mensagens que fazem parte do histórico da outra parte.
-// CPF e e-mail viram marcadores únicos (gravados pelo driver para não passar pelo validador de CPF),
-// assim os índices únicos continuam válidos e os dados reais ficam livres para um novo cadastro.
 function camposAnonimizados(id) {
   return {
     nome: NOME_REMOVIDO,
@@ -53,14 +47,10 @@ function camposAnonimizados(id) {
   };
 }
 
-// a conta está fora de uso se já foi removida ou se a exclusão passou do ponto sem volta.
 function contaEncerrada(usuario) {
   return Boolean(usuario?.removido || usuario?.exclusaoConfirmadaEm);
 }
 
-// troca o nome da conta removida nos textos das notificações de outras pessoas que a citam
-// (mensagens enviadas e avaliações escritas por ela) e apaga as notificações da própria conta.
-// Regenera o texto pelo mesmo modelo, então rodar de novo não muda nada.
 async function anonimizarNotificacoes(usuarioId) {
   const [mensagens, avaliacoes] = await Promise.all([
     Mensagem.find({ remetente: usuarioId }).select('_id').lean(),
@@ -85,8 +75,6 @@ async function anonimizarNotificacoes(usuarioId) {
   await Notificacao.deleteMany({ destinatario: usuarioId });
 }
 
-// contrato ativo ligado a conta encerrada só existe se um pedido foi gravado durante a exclusão e o
-// processo caiu antes da segunda checagem. Ele é cancelado (não apagado) para manter o registro.
 async function cancelarContratosAtivosDe(ids) {
   if (!ids.length) return 0;
   const resultado = await Contrato.updateMany(
@@ -96,9 +84,6 @@ async function cancelarContratosAtivosDe(ids) {
   return resultado.modifiedCount || 0;
 }
 
-// conclui uma exclusão já confirmada. Cada passo pode ser repetido sem efeito extra, então a mesma
-// função serve para o fluxo normal e para retomar uma exclusão interrompida.
-// A anonimização do usuário é o último passo: até lá a conta segue bloqueada por exclusaoConfirmadaEm.
 async function concluirExclusao(usuarioId) {
   const usuario = await Usuario.findById(usuarioId).select('removido exclusaoConfirmadaEm fotoPerfil').lean();
   if (!usuario || !contaEncerrada(usuario)) return false;
@@ -129,12 +114,10 @@ async function concluirExclusao(usuarioId) {
     { _id: usuario._id, removido: { $ne: true } },
     { $set: camposAnonimizados(String(usuario._id)) }
   );
-  // um pedido pode ter sido gravado enquanto os passos acima rodavam.
   await cancelarContratosAtivosDe([usuario._id]);
   return true;
 }
 
-// resultado: { ok: true } ou { status, mensagem }
 async function excluirConta(usuarioId, senhaAtual) {
   if (typeof senhaAtual !== 'string' || !senhaAtual) {
     return { status: 400, mensagem: 'Informe sua senha atual para excluir a conta.' };
@@ -148,11 +131,8 @@ async function excluirConta(usuarioId, senhaAtual) {
   } catch {
     senhaCorreta = false;
   }
-  // 403, não 401: o frontend trata 401 nesta rota como sessão expirada e encerraria o login.
   if (!senhaCorreta) return { status: 403, mensagem: 'Senha atual incorreta.' };
 
-  // fase 1 (reversível): marca a verificação antes de procurar contratos ativos. A criação de contratos
-  // confere esta marca antes e depois de gravar, então pedidos simultâneos são recusados ou desfeitos.
   const marca = new Date();
   const marcado = await Usuario.findOneAndUpdate(
     {
@@ -181,8 +161,6 @@ async function excluirConta(usuarioId, senhaAtual) {
           'Você possui contratos em andamento. Conclua ou cancele esses contratos antes de excluir a conta.'
       };
     }
-    // fase 2 (sem volta): uma única gravação confirma a exclusão e invalida as sessões.
-    // A partir daqui a conta não faz login nem participa de contratos, mesmo que o processo caia.
     confirmado = await Usuario.findOneAndUpdate(
       { _id: usuario._id, removendoDesde: marca, exclusaoConfirmadaEm: null },
       { $set: { exclusaoConfirmadaEm: new Date() }, $inc: { versaoSessao: 1 } }
@@ -193,13 +171,10 @@ async function excluirConta(usuarioId, senhaAtual) {
   }
   if (!confirmado) return { status: 409, mensagem: 'A exclusão desta conta já está em andamento.' };
 
-  // se algo falhar aqui, a conta continua encerrada e a recuperação termina o trabalho.
   await concluirExclusao(usuario._id);
   return { ok: true };
 }
 
-// retoma exclusões interrompidas e cancela contratos ativos que tenham ficado ligados a contas encerradas.
-// Roda na inicialização, periodicamente e pelo script src/scripts/recuperarExclusoes.js.
 async function recuperarExclusoesPendentes() {
   const pendentes = await Usuario.find({ exclusaoConfirmadaEm: { $ne: null }, removido: { $ne: true } })
     .select('_id')
@@ -208,12 +183,10 @@ async function recuperarExclusoesPendentes() {
   const encerradas = await Usuario.find({ $or: [{ removido: true }, { exclusaoConfirmadaEm: { $ne: null } }] })
     .select('_id')
     .lean();
-  // Também recolhe anúncios gravados por requisições antigas depois da anonimização.
   let contratosCancelados = await cancelarContratosAtivosDe(encerradas.map((usuario) => usuario._id));
   const jaConcluidas = new Set(pendentes.map(({ _id }) => String(_id)));
   for (const { _id } of encerradas) if (!jaConcluidas.has(String(_id))) await concluirExclusao(_id);
   contratosCancelados += await cancelarContratosAtivosDe(encerradas.map((usuario) => usuario._id));
-  // Recupera uma queda entre gravar contrato e conferir novamente o serviço retirado.
   const retirados = await Servico.find({ removido: true }).select('_id').lean();
   const canceladosDeRetirados = retirados.length ? await Contrato.updateMany(
     { servico: { $in: retirados.map(({ _id }) => _id) }, status: { $in: Contrato.STATUS_ATIVOS } },
@@ -222,7 +195,6 @@ async function recuperarExclusoesPendentes() {
   return { exclusoesConcluidas: pendentes.length, contratosCancelados: contratosCancelados + (canceladosDeRetirados?.modifiedCount || 0) };
 }
 
-// usada pela criação de contrato: conta inexistente, encerrada ou em verificação de exclusão não contrata.
 async function contaPodeContratar(usuarioId) {
   const usuario = await Usuario.findById(usuarioId)
     .select('removido exclusaoConfirmadaEm removendoDesde')

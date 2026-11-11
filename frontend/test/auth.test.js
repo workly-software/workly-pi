@@ -22,7 +22,6 @@ test('registration messages exactly preserve legacy punctuation and CPF rules', 
   assert.equal(validateField('cpf', ''), 'CPF é obrigatório');
   assert.equal(validateField('cpf', '123'), 'CPF deve ter 11 números');
   assert.equal(validateField('cpf', '11111111111'), 'CPF não pode ter todos os números iguais');
-  // M-03: verification digits are checked (12345678900 has wrong digits; 123.456.789-09 is sequential).
   assert.equal(validateField('cpf', '12345678900'), 'CPF inválido');
   assert.equal(validateField('cpf', '123.456.789-09'), 'CPF inválido');
   assert.equal(validateField('cpf', '529.982.247-26'), 'CPF inválido');

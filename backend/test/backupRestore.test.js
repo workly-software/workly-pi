@@ -1,5 +1,3 @@
-// Etapa 4: backup e restore. Testes que não dependem do mongodump/mongorestore: as ferramentas são substituídas
-// por um processo falso que só registra argumentos. Bancos: apenas workly_test_*; pastas: apenas temporárias.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -35,7 +33,6 @@ test.after(async () => {
   for (const { name } of databases) if (name.startsWith(BASE)) await cliente.db(name).dropDatabase();
   await cliente.close();
 });
-// t.skip() só marca o teste: devolve true para o corpo parar de verdade.
 const semMongo = (t) => {
   if (cliente) return false;
   t.skip('MongoDB local indisponível');
@@ -48,7 +45,6 @@ async function pastaTemporaria(t) {
   return pasta;
 }
 
-// processo falso no lugar do mongodump/mongorestore.
 function spawnFalso({ versao = 'mongotool version: 100.9.0', aoExecutar } = {}) {
   const chamadas = [];
   const spawnFn = (comando, args, opcoes) => {
@@ -71,7 +67,6 @@ function spawnFalso({ versao = 'mongotool version: 100.9.0', aoExecutar } = {}) 
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
-// pasta de backup com manifesto íntegro, sem usar as ferramentas.
 async function criarBackupFalso(pasta, { inicio = new Date(Date.now() - 60 * 60 * 1000), uploads = [] } = {}) {
   const dados = path.join(pasta, 'dump', BASE);
   await fsp.mkdir(dados, { recursive: true });
@@ -136,7 +131,6 @@ test('credenciais: a URI vai num arquivo temporário apagado depois, nunca nos a
   }
   assert.deepEqual(falso.chamadas[1].args.slice(2), ['--db', BASE, '--out', falso.chamadas[1].args[5], '--gzip']);
 
-  // também apaga quando a ferramenta falha
   let config2 = null;
   const falha = spawnFalso({
     aoExecutar: async ({ args }) => {
@@ -183,7 +177,6 @@ test('restore recusa base que não é de teste, a menos que liberada pelo nome e
       /não é uma base de teste/
     );
   }
-  // liberada: passa da guarda e para na próxima verificação (manifesto ausente), sem chamar ferramenta
   await assert.rejects(
     br.restaurarBackup({ uri: 'mongodb://127.0.0.1:27017/workly', pasta, confirmar: 'workly', manutencaoConfirmada: true, ambiente: { WORKLY_RESTORE_BASE_LIBERADA: 'workly' }, spawnFn: falso.spawnFn, ...silencio }),
     /Manifesto não encontrado/
@@ -252,7 +245,6 @@ test('uploads: recusa travessia e links, nunca sobrescreve e só cria o que falt
       /recusado/
     );
   }
-  // hash diferente do registrado
   await assert.rejects(
     br.restaurarUploads({ pastaBackup: backup, arquivos: [{ ...manifesto.uploads.arquivos[0], sha256: 'b'.repeat(64) }], pastaUploads: destino, registrar: () => {} }),
     /alterado/
@@ -264,7 +256,6 @@ test('uploads: recusa travessia e links, nunca sobrescreve e só cria o que falt
   assert.equal(await fsp.readFile(path.join(destino, 'servicos', 'existente.png'), 'utf8'), 'atual', 'não sobrescreveu');
   assert.equal(await fsp.readFile(path.join(destino, 'perfis', 'nova.png'), 'utf8'), 'nova');
 
-  // subpasta do destino que é link para fora da pasta de uploads
   const fora = await pastaTemporaria(t);
   const destino2 = await pastaTemporaria(t);
   let linkCriado = true;
@@ -281,7 +272,6 @@ test('uploads: recusa travessia e links, nunca sobrescreve e só cria o que falt
     assert.deepEqual(await fsp.readdir(fora), [], 'nada escrito fora');
   } else t.diagnostic('link de pasta indisponível neste sistema; caso do link no destino não verificado');
 
-  // arquivo do backup que é link simbólico
   const backup2 = await pastaTemporaria(t);
   const m2 = await criarBackupFalso(backup2, { uploads: [['perfis/link.png', 'x']] });
   await fsp.rm(path.join(backup2, 'uploads', 'perfis', 'link.png'));
@@ -297,7 +287,6 @@ test('uploads: recusa travessia e links, nunca sobrescreve e só cria o que falt
   }
 });
 
-// junction (link de pasta que o Windows cria sem privilégio); null se nem isso for possível.
 async function junction(alvo, link) {
   try {
     await fsp.symlink(alvo, link, 'junction');
@@ -311,7 +300,6 @@ test('uploads: links nos diretórios intermediários, inclusive internos, são r
   const fora = await pastaTemporaria(t);
   const avisoSemLink = 'junction indisponível neste sistema; caso não verificado';
 
-  // backup: uploads/perfis é um junction para fora, com um arquivo de mesmo nome e hash
   const backup = await pastaTemporaria(t);
   const manifesto = await criarBackupFalso(backup, { uploads: [['perfis/foto.png', 'conteudo']] });
   await fsp.rm(path.join(backup, 'uploads', 'perfis'), { recursive: true });
@@ -325,7 +313,6 @@ test('uploads: links nos diretórios intermediários, inclusive internos, são r
     assert.deepEqual(await fsp.readdir(destino), [], 'nada criado no destino');
   } else t.diagnostic(avisoSemLink);
 
-  // backup: link interno (aponta para outra pasta dentro de uploads/) também é recusado
   const backupInterno = await pastaTemporaria(t);
   const mInterno = await criarBackupFalso(backupInterno, { uploads: [['real/foto.png', 'conteudo'], ['atalho/foto.png', 'conteudo']] });
   await fsp.rm(path.join(backupInterno, 'uploads', 'atalho'), { recursive: true });
@@ -338,7 +325,6 @@ test('uploads: links nos diretórios intermediários, inclusive internos, são r
     assert.deepEqual(await fsp.readdir(destino), [], 'nem o arquivo válido foi gravado');
   } else t.diagnostic(avisoSemLink);
 
-  // destino: pasta intermediária (a/b) com junction para fora não recebe nada, nem pastas criadas fora
   const backupFundo = await pastaTemporaria(t);
   const mFundo = await criarBackupFalso(backupFundo, { uploads: [['a/b/c/foto.png', 'conteudo']] });
   const destino = await pastaTemporaria(t);
@@ -352,7 +338,6 @@ test('uploads: links nos diretórios intermediários, inclusive internos, são r
     assert.deepEqual(await fsp.readdir(foraDestino), [], 'nenhuma pasta criada fora de uploads/');
   } else t.diagnostic(avisoSemLink);
 
-  // destino: link interno (aponta para dentro de uploads/) também é recusado
   const destinoInterno = await pastaTemporaria(t);
   await fsp.mkdir(path.join(destinoInterno, 'outra'));
   await fsp.mkdir(path.join(destinoInterno, 'a'));
@@ -364,7 +349,6 @@ test('uploads: links nos diretórios intermediários, inclusive internos, são r
     assert.deepEqual(await fsp.readdir(path.join(destinoInterno, 'outra')), []);
   } else t.diagnostic(avisoSemLink);
 
-  // sem links, o mesmo caminho profundo é criado normalmente
   const limpo = await pastaTemporaria(t);
   const ok = await br.restaurarUploads({ pastaBackup: backupFundo, arquivos: mFundo.uploads.arquivos, pastaUploads: limpo, registrar: () => {} });
   assert.deepEqual(ok.criados, ['a/b/c/foto.png']);
@@ -406,7 +390,6 @@ test('logs: segredo dividido entre blocos da saída continua mascarado', async (
   }
   assert.ok(texto.includes('progresso 50%'), 'conteúdo comum continua aparecendo');
   assert.ok(texto.includes('última linha sem quebra'), 'o resto é emitido ao fechar');
-  // a URI conhecida inteira vira ***; o texto comum da mesma linha continua visível
   assert.ok(texto.includes('outro destino ***'), texto);
 });
 
@@ -420,7 +403,6 @@ test('logs: linha acima de 64 KB vira só um aviso, sem nenhum trecho do segredo
   ];
   for (const [descricao, segredo, [inicio, fim], proibidos] of variantes) {
     const segredos = segredo === uriSrv ? br.segredosDa(uriSrv) : [segredo, decodeURIComponent(segredo)];
-    // o segredo atravessa o limite de 64 KB e é dividido entre dois blocos do stream
     const blocos = ['linha comum antes\n', 'x'.repeat(64 * 1024 - inicio.length + 3) + inicio, fim + ' resto da linha longa\n', 'linha normal depois\n'];
     const registros = [];
     const falso = spawnFalso({
@@ -443,7 +425,6 @@ test('logs: linha acima de 64 KB vira só um aviso, sem nenhum trecho do segredo
     assert.deepEqual(registros, ['linha comum antes', AVISO, 'linha normal depois'], descricao);
   }
 
-  // linha longa sem quebra final até o fechamento: sai só o aviso
   const registros = [];
   const semQuebra = spawnFalso({
     aoExecutar: async ({ proc }) => {
@@ -471,7 +452,6 @@ test('base temporária que já existe não é apagada nem alterada; a criada por
   await criarBackupFalso(pasta);
   const nomes = await semearDestino();
 
-  // colisão: a base temporária já tem dados de outra execução
   const ocupada = `${BASE}_rtmp_colisao`;
   await cliente.db(ocupada).collection('usuarios').insertOne({ nome: 'de outra execução' });
   const avisos = [];
@@ -485,7 +465,6 @@ test('base temporária que já existe não é apagada nem alterada; a criada por
   assert.ok(avisos.some((l) => /não foi tocada/.test(l)));
   assert.deepEqual(await nomes(), ['atual 1', 'atual 2', 'atual 3']);
 
-  // falha depois que o mongorestore desta execução já gravou: a base temporária dela é removida
   let criada = null;
   const falhaDepois = spawnFalso({
     aoExecutar: async ({ args }) => {
@@ -525,7 +504,6 @@ test('contas excluídas depois do backup bloqueiam o restore, inclusive sem info
   const semData = await br.verificarExclusoesPosteriores(db, { dump: {} });
   assert.ok(semData.motivos.some((m) => /data de backup confiável/.test(m)));
 
-  // conferência exata na cópia restaurada
   const id = new mongoose.Types.ObjectId();
   const temporaria = cliente.db(`${BASE}_tmpcheck`);
   await temporaria.collection('usuarios').insertOne({ _id: id, removido: false, nome: 'dados antigos' });
@@ -549,7 +527,6 @@ test('restore completo: bloqueio de excluídos por padrão e exceção só com f
   );
   assert.deepEqual(bloqueio.chamadas.map((c) => c.args[0]), ['--version'], 'mongorestore não chegou a restaurar');
 
-  // com a exceção, passa da regra e chega ao mongorestore (aqui falso, falhando): o destino continua intacto
   const excecao = spawnFalso({ aoExecutar: async () => 1 });
   await assert.rejects(
     br.restaurarBackup({
@@ -630,7 +607,6 @@ test('falha no meio da troca: para, informa o que foi trocado e preserva as cole
   assert.equal(await origem(destino, 'c'), 'atual');
   assert.equal(await origem(temporaria, 'b'), 'backup', 'as cópias não trocadas ficam na base temporária');
 
-  // continuação sem falha: as anteriores são preservadas, nunca apagadas
   const trocadas = await br.trocarColecoes({ cliente, base: BASE, baseTemporaria, colecoes: ['b', 'c'], carimboTroca: '20261015-120001' });
   assert.deepEqual(trocadas.map((x) => x.preservada), ['b_pre_restore_20261015-120001', 'c_pre_restore_20261015-120001']);
   assert.equal(await origem(destino, 'c'), 'backup');

@@ -48,7 +48,6 @@ test('login posts only official credentials and normalizes official response ali
     });
   });
   const result = await login({ email: 'qa@example.invalid', senha: 'password' });
-  // M-04: the session token arrives only as an HttpOnly cookie, never in the result.
   assert.equal('token' in result, false);
   assert.equal(result.user.idUsuario, 'qa');
   assert.equal(result.user.tipoConta, 'Contratante');

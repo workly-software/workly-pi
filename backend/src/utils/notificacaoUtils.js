@@ -1,8 +1,6 @@
 const Notificacao = require('../models/Notificacao');
 const Usuario = require('../models/Usuario');
 
-// textos de cada tipo de notificação
-// centralizado aqui para não espalhar strings pelo código de negócio
 const TEMPLATES = {
   contrato_novo: (nomeServico) => ({
     titulo: 'Nova contratação recebida',
@@ -60,15 +58,6 @@ const TEMPLATES = {
   })
 };
 
-// REGRA DE PREFERÊNCIAS (único lugar onde ela é definida):
-// - tipos essenciais são sempre enviados, mesmo com preferências desligadas. São os avisos de transação do
-//   contrato (aceite, acordo de valor, início, entrega, confirmação, ajuste, recusa, cancelamento) e a avaliação
-//   recebida: quem participa de um contrato precisa saber quando ele muda. Segurança e conta entram nesta lista
-//   quando ganharem notificações próprias.
-// - os demais tipos só são enviados se a preferência correspondente do destinatário estiver ligada.
-//   Hoje só "notificacoesPropostas" (Novas propostas e mensagens) tem correspondência clara.
-// - "notificacoesEmail" e "notificacoesMarketing" não controlam nada: não há envio de e-mail nem marketing.
-// Todo tipo aceito pelo model Notificacao precisa estar em exatamente uma das duas listas (verificado em teste).
 const TIPOS_ESSENCIAIS = Object.freeze([
   'proposta_aceita',
   'proposta_recusada',
@@ -87,7 +76,6 @@ const PREFERENCIA_POR_TIPO = Object.freeze({
   mensagem_nova: 'notificacoesPropostas'
 });
 
-// confere a preferência no momento do envio; preferência ausente vale como ligada (padrão do model).
 async function destinatarioAceita(destinatario, tipo) {
   if (TIPOS_ESSENCIAIS.includes(tipo)) return true;
   const preferencia = PREFERENCIA_POR_TIPO[tipo];
@@ -96,16 +84,6 @@ async function destinatarioAceita(destinatario, tipo) {
   return Boolean(usuario) && usuario[preferencia] !== false;
 }
 
-/**
- * Cria uma notificação no banco de forma segura.
- * Nunca lança exceção — se falhar, apenas loga. Notificação é funcionalidade
- * auxiliar e nunca deve impedir a ação principal de completar.
- * Os controllers só chamam isto depois de gravar a ação que gerou o aviso.
- * Devolve a notificação criada, ou null se foi suprimida pela preferência ou falhou.
- */
-
-// função central pra criar notificação.
-// assim os controllers não precisam montar título/mensagem toda hora.
 async function criarNotificacao({
   destinatario,
   tipo,
@@ -129,8 +107,6 @@ async function criarNotificacao({
     return null;
   }
 }
-
-// helpers por evento — chamados nos controllers de contrato e avaliação.
 
 async function notificarContratoNovo(freelancerId, contratoId, nomeServico, tipoContratacao) {
   const ehProposta = tipoContratacao !== 'fixo';

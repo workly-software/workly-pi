@@ -15,14 +15,11 @@ const { normalizarCpf, motivoCpfInvalido } = require('../utils/cpfUtils');
 const recuperacaoSenha = require('../services/recuperacaoSenhaService');
 const { motivoNovaSenhaInvalida } = require('../utils/senhaUtils');
 
-// regex simples para e-mail — valida formato básico sem consulta externa.
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// CPF já cadastrado: a mensagem não confirma que o CPF existe na base.
 const MENSAGEM_CPF_INDISPONIVEL =
   'Não foi possível concluir o cadastro com os dados informados. Confira as informações ou, se já possui uma conta, tente entrar ou recuperar sua senha.';
 
-// cadastro: valida campos, verifica e-mail e cpf únicos, cria o usuário.
 exports.cadastrar = async (req, res) => {
   try {
     const nome = obterCampo(req.body, ['nome']);
@@ -44,7 +41,6 @@ exports.cadastrar = async (req, res) => {
     const erroSenha = motivoNovaSenhaInvalida(senha);
     if (erroSenha) return erro(res, 400, erroSenha);
 
-    // valida o texto recebido (pontuação, tamanho, dígitos verificadores) antes de normalizar.
     const erroCpf = motivoCpfInvalido(cpf);
     const cpfNormalizado = normalizarCpf(cpf);
     if (erroCpf) {
@@ -60,7 +56,6 @@ exports.cadastrar = async (req, res) => {
       return erro(res, 400, 'Área de atuação é obrigatória para freelancers.');
     }
 
-    // verifica e-mail e cpf ao mesmo tempo para evitar duas queries sequenciais.
     const [emailExistente, cpfExistente] = await Promise.all([
       Usuario.findOne({ email: String(email).toLowerCase().trim() }),
       Usuario.findOne({ cpf: cpfNormalizado })
@@ -69,7 +64,6 @@ exports.cadastrar = async (req, res) => {
     if (emailExistente) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
     if (cpfExistente) return erro(res, 409, MENSAGEM_CPF_INDISPONIVEL);
 
-    // a consulta acima não basta contra cadastros simultâneos: sem os índices únicos verificados, nada é criado.
     if (!(await Usuario.protecaoCadastroDisponivel())) {
       return erro(res, 503, 'Novos cadastros estão temporariamente indisponíveis. Tente novamente mais tarde.');
     }
@@ -101,12 +95,8 @@ exports.cadastrar = async (req, res) => {
   }
 };
 
-// login: retorna 401 genérico em ambos os casos (e-mail não encontrado ou senha errada)
-// para não revelar se o e-mail existe no sistema.
 exports.entrar = async (req, res) => {
   try {
-    // o login cria o cookie de sessão: sem o cabeçalho da aplicação, um formulário de outro site
-    // poderia entrar o visitante numa conta escolhida pelo atacante (login CSRF).
     if (!requisicaoDoAplicativo(req)) return erro(res, 403, 'Requisição recusada.');
     const email = obterCampo(req.body, ['email']);
     const senha = obterCampo(req.body, ['senha']);
@@ -116,7 +106,6 @@ exports.entrar = async (req, res) => {
     }
 
     const usuario = await Usuario.findOne({ email: String(email).toLowerCase().trim() });
-    // contas removidas não têm credencial válida; a resposta é a mesma de credenciais erradas.
     const ativo = usuario && !usuario.removido && !usuario.exclusaoConfirmadaEm;
     const senhaCorreta = ativo ? await bcrypt.compare(String(senha), usuario.senha).catch(() => false) : false;
 
@@ -124,7 +113,6 @@ exports.entrar = async (req, res) => {
       return erro(res, 401, 'Credenciais inválidas.');
     }
 
-    // o token vai só no cookie HttpOnly; o corpo da resposta não o expõe a scripts da página.
     definirCookieSessao(req, res, emitirToken(usuario));
 
     return sucesso(res, 200, 'Login realizado com sucesso.', null, {
@@ -136,9 +124,6 @@ exports.entrar = async (req, res) => {
   }
 };
 
-// logout: revoga só o token desta sessão (os outros aparelhos continuam conectados) e apaga o cookie.
-// Responde 200 mesmo sem sessão válida, para o navegador sempre conseguir sair.
-// Tokens antigos, sem "jti", não podem ser revogados um a um: para eles, todas as sessões são encerradas.
 exports.sair = async (req, res) => {
   try {
     const cabecalho = req.header('Authorization');
@@ -174,7 +159,6 @@ exports.sair = async (req, res) => {
   }
 };
 
-// recuperação de senha: as regras ficam em services/recuperacaoSenhaService.js.
 exports.solicitarRedefinicao = async (req, res) => {
   try {
     const { status, mensagem } = await recuperacaoSenha.solicitar(req.body?.email);

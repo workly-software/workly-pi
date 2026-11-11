@@ -61,7 +61,6 @@ export default function CatalogShell({
             {children}
           </div>
           {footer === 'empty' ? (
-            // Work surfaces close with a quiet rule instead of an empty footer band.
             <footer className="border-t border-workly-rule bg-workly-paper px-6 py-6 text-center text-sm text-workly-muted-warm dark:border-white/10 dark:bg-workly-night dark:text-[#9aa59f]">
               © {new Date().getFullYear()} Workly. Todos os direitos reservados.
             </footer>

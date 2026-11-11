@@ -11,8 +11,6 @@ export function FooterSection({ title, children, className = '', headingClassNam
   );
 }
 
-// Slots preserve page-owned copy and destinations without inventing URLs.
-// tone="paper" carries the editorial home's ground, ink and rules into the footer.
 export default function SiteFooter({
   children,
   bottom,

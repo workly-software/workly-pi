@@ -2,8 +2,6 @@ import { Link } from 'react-router';
 import { defaultServiceImage, defaultProfileImage, formatCurrency } from '../../services/catalogService';
 import { officeFor } from './offices';
 
-// Frameless editorial card: the image carries the surface, text sits on the page ground.
-// One stretched link (the title) makes the whole card clickable; the author link sits above it.
 export default function FeaturedCard({ service, categoryCover, footer, feature = false }) {
   const detail = `/detalhe-servico?id=${service.idServico}`;
   const office = officeFor(service);
@@ -13,7 +11,6 @@ export default function FeaturedCard({ service, categoryCover, footer, feature =
   const rated = service.totalAvaliacoesServico > 0 && service.avaliacaoMediaServico > 0;
   return (
     <article className={`group relative min-w-0 rounded-lg ${feature ? 'grid items-center gap-x-10 gap-y-5 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]' : 'flex flex-col'} outline-offset-4 has-[.card-link:focus-visible]:outline-2 has-[.card-link:focus-visible]:outline-workly-primary-ink`}>
-      {/* Category photos are duotoned so they read as covers, never as the freelancer's work. */}
       <div
         className={`relative ${feature ? 'aspect-[16/10]' : 'aspect-[16/11]'} overflow-hidden rounded-xl ${ownImage ? 'bg-workly-sunken' : 'bg-workly-forest-raised'}`}
       >

@@ -72,7 +72,6 @@ test('profile services use official endpoints, bearer, partial fields and crop u
   );
   assert.equal(requests[2][1].body, '{"doisFatores":false}');
   assert.equal(requests[5][1].body.get('nova_foto').name, 'foto-perfil.webp');
-  // M-04: no stored bearer token; every call carries the app header and the session cookie.
   for (const [, options] of requests) {
     assert.equal(options.headers.Authorization, undefined);
     assert.equal(options.headers['X-Workly-Requisicao'], '1');
@@ -115,7 +114,6 @@ test('e-mail change sends the current password, keeps the session on 403 and ref
   assert.equal(values.get('sessao'), 's1', 'a wrong password must not end the session');
   assert.deepEqual(bodies[0], { email: 'novo@x.com', senhaAtual: 'errada' });
 
-  // the API renews this session through the HttpOnly cookie; nothing secret is stored by the page.
   t.mock.method(globalThis, 'fetch', async () =>
     Response.json({ sucesso: true, user: { nome: 'Ana', email: 'novo@x.com' } })
   );

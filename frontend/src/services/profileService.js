@@ -29,12 +29,10 @@ async function mutate(path, method, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  // password/e-mail changes revoke older sessions; the API renews this one through the HttpOnly cookie.
   if (response.user) salvarSessao({ user: response.user });
   return response;
 }
 export const updateProfile = (data) => mutate('/api/usuarios/perfil', 'PUT', data);
-// same comparison as the backend: changing the login e-mail requires the current password.
 const normalizedEmail = (value) => String(value || '').trim().toLowerCase();
 export function emailChanged(current, next) {
   return Boolean(normalizedEmail(next)) && normalizedEmail(next) !== normalizedEmail(current);

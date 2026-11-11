@@ -30,7 +30,6 @@ export default function ProfileHeader({
       ? created.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
       : '--';
   const area = user.areaAtuacao ? categoryLabel(user.areaAtuacao) : '--';
-  // Public visitors weigh track record; the owner already sees counts in the dashboard below.
   const stats = publicProfile
     ? [
         [services.length, 'Serviços'],

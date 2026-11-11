@@ -56,7 +56,6 @@ export const categories = [
   }
 ];
 
-// Display names only; `name` stays the identifier the API stores and filters on.
 const plainName = (text) =>
   String(text || '')
     .normalize('NFD')

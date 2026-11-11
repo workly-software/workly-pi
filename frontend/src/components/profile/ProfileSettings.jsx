@@ -97,7 +97,6 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
       </FormField>
     );
   }
-  // unavailable: the channel is not implemented yet, so the switch is shown off and cannot be changed.
   function toggle(key, title, description, unavailable = false) {
     return (
       <label
@@ -153,7 +152,6 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
       )
         return;
     }
-    // the login e-mail only changes with the current password; the other sessions are signed out.
     let senhaAtual;
     if (section === 'profile' && emailChanged(obterUsuario()?.email, values.email)) {
       const confirmation = await showAuthAlert({
@@ -233,7 +231,7 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
                 ? group(['metodoPagamento', 'chavePix', 'banco'])
                 : section === 'preferences'
                   ? { doisFatores: Boolean(values.doisFatores) }
-                  : // only the in-app preference works today; e-mail and marketing keep their stored values.
+                  :
                     { notificacoesPropostas: Boolean(values.notificacoesPropostas) };
         result = await updateProfile(payload);
       }
@@ -264,7 +262,6 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
       setBusy(false);
     }
   }
-  // Account removal anonymises the profile; finished contracts, reviews and messages stay for the other party.
   const removalDetails = `
     <div style="text-align:left">
       <p style="margin:0 0 10px"><strong>Será removido:</strong> nome, e-mail, CPF, telefone, foto, dados de pagamento, links e seus serviços publicados.</p>

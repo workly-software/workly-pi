@@ -7,11 +7,8 @@ export const registrationSubmitStyles =
   'mt-2.5 w-full cursor-pointer rounded-md border-0 bg-workly-forest px-4 py-3 text-base leading-[normal] font-semibold text-workly-on-forest transition-[background-color,transform] duration-150 ease-workly-out hover:bg-workly-forest-raised motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-workly-dark-accent dark:text-workly-night dark:hover:bg-[#6ee7a0]';
 export const linkStyles =
   'font-medium text-workly-primary-ink underline-offset-4 hover:underline dark:text-workly-dark-accent';
-// Dark grounds: invert the black wordmark and rotate hues back so the brand dots keep their colour.
 export const glow = '[filter:invert(1)_hue-rotate(180deg)]';
 
-// Each tone keeps its own symbol and tint so success, info, warning and error stay distinct.
-// Colours are literal because Swal mounts outside the themed root.
 const alertTones = {
   success: { symbol: 'fa-check', light: 'bg-[#e7f6ee]! text-[#037a3a]!', dark: 'bg-[#5fd394]/12! text-[#5fd394]!' },
   info: { symbol: 'fa-info', light: 'bg-[#e8eef5]! text-[#2f5d8a]!', dark: 'bg-[#93c5fd]/12! text-[#93c5fd]!' },
@@ -19,9 +16,6 @@ const alertTones = {
   error: { symbol: 'fa-xmark', light: 'bg-[#fde8e8]! text-[#9b1c1c]!', dark: 'bg-[#fda4af]/14! text-[#fda4af]!' }
 };
 
-// danger: irreversible confirmations get a red action and start focused on Cancel.
-// html: trusted static markup only. password: asks for a password before confirming.
-// onConfirm(value): runs inside the modal; returning a message keeps it open and shows the message.
 export function showAuthAlert({
   icon = 'info',
   symbol,
@@ -69,7 +63,6 @@ export function showAuthAlert({
     showCancelButton: Boolean(cancelText),
     cancelButtonText: cancelText,
     reverseButtons: true,
-    // irreversible prompts start on Cancel even when they carry an input field.
     ...(danger && cancelText ? { didOpen: () => Swal.getCancelButton()?.focus() } : {}),
     focusCancel: Boolean(cancelText) && (danger || icon === 'warning'),
     ...(onConfirm ? {} : { allowOutsideClick: true }),

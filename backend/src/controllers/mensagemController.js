@@ -24,12 +24,7 @@ function toObjectId(value) {
   return new mongoose.Types.ObjectId(String(value));
 }
 
-// verifica se o usuário é parte do contrato e retorna os ids das duas partes.
-// só deixa ler/enviar mensagem se o usuário fizer parte do contrato.
-// sem isso qualquer pessoa poderia tentar abrir conversa pelo id.
 async function carregarContratoDoUsuario(contratoId, userId) {
-  // autoriza pelos ids gravados no contrato: se uma das partes ou o serviço não existir mais,
-  // a checagem continua correta e a resposta segue controlada.
   const contrato = await Contrato.findById(contratoId).select('servico cliente freelancer status').lean();
   if (!contrato) return null;
 
@@ -58,9 +53,6 @@ async function contratoAindaAtivo(contratoId) {
   return Boolean(await Contrato.exists({ _id: contratoId, status: { $in: STATUS_CHAT_ATIVO } }));
 }
 
-// envia uma mensagem no chat de um contrato.
-// Novos envios só enquanto o contrato está ativo; depois de concluído ou cancelado o histórico fica só para leitura.
-// Contratos concluídos, encerrados ou cancelados não entram na central de mensagens.
 exports.enviar = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -85,13 +77,11 @@ exports.enviar = async (req, res) => {
       texto
     });
 
-    // o contrato pode ter sido encerrado entre a checagem e a gravação: nesse caso a mensagem é desfeita.
     if (!(await contratoAindaAtivo(contratoId))) {
       await Mensagem.deleteOne({ _id: mensagem._id });
       return erro(res, 409, MENSAGEM_CHAT_ENCERRADO);
     }
 
-    // notifica a outra parte do contrato.
     const ehRemetenteCliente = String(contrato.cliente._id) === String(userId);
     const destinatario = ehRemetenteCliente ? contrato.freelancer._id : contrato.cliente._id;
     const nomeRemetente = ehRemetenteCliente ? contrato.cliente.nome : contrato.freelancer.nome;
@@ -111,10 +101,6 @@ exports.enviar = async (req, res) => {
   }
 };
 
-// retorna resumo de mensagens por contrato sem marcar como lidas.
-// usado pela central de mensagens para mostrar preview e badge por conversa.
-// usado pela lista lateral da central de mensagens.
-// importante: essa rota não marca nada como lido, só monta preview e contador.
 exports.resumoPorContrato = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -133,8 +119,6 @@ exports.resumoPorContrato = async (req, res) => {
 
     const userObjectId = toObjectId(userId);
 
-    // Antes esta rota carregava TODAS as mensagens de todos os contratos.
-    // Agora o MongoDB devolve só a última mensagem e a contagem de não lidas por contrato.
     const [ultimas, naoLidas] = await Promise.all([
       Mensagem.aggregate([
         { $match: { contrato: { $in: contratoIds } } },
@@ -167,9 +151,6 @@ exports.resumoPorContrato = async (req, res) => {
   }
 };
 
-// lista todas as mensagens de um contrato em ordem cronológica, inclusive de contratos encerrados.
-// ao listar, marca automaticamente as mensagens do outro usuário como lidas.
-// quando abre a conversa de verdade, aí sim as mensagens do outro usuário viram lidas.
 exports.listarPorContrato = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -179,8 +160,6 @@ exports.listarPorContrato = async (req, res) => {
     const contrato = await carregarContratoDoUsuario(contratoId, userId);
     if (!contrato) return erro(res, 403, 'Você não faz parte deste contrato ou ele não existe.');
 
-    // marca como lidas as mensagens enviadas pelo outro usuário neste contrato.
-    // Depois limpa as notificações dessas mensagens para o sino não ficar preso.
     const mensagensPendentes = await Mensagem.find({
       contrato: contratoId,
       remetente: { $ne: userId },
@@ -226,9 +205,6 @@ exports.listarPorContrato = async (req, res) => {
   }
 };
 
-// conta mensagens não lidas do usuário logado em todos os contratos.
-// com ?contexto=sino a contagem segue a preferência de avisos de mensagens (mesma regra de notificacaoUtils):
-// desligada, o sino recebe 0. Sem o parâmetro, devolve a contagem real, como o chat sempre recebeu.
 exports.contarNaoLidas = async (req, res) => {
   try {
     const userId = usuarioId(req);
@@ -237,7 +213,6 @@ exports.contarNaoLidas = async (req, res) => {
       return sucesso(res, 200, 'Contagem carregada.', { naoLidas: 0, suprimidoPelaPreferencia: true });
     }
 
-    // busca contratos nos quais o usuário participa.
     const contratos = await Contrato.find({
       status: { $in: STATUS_CHAT_ATIVO },
       $or: [{ cliente: userId }, { freelancer: userId }]

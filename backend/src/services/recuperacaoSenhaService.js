@@ -4,13 +4,6 @@ const Usuario = require('../models/Usuario');
 const ambiente = require('../config/ambiente');
 const { motivoNovaSenhaInvalida } = require('../utils/senhaUtils');
 
-// Recuperação de senha local.
-// - O token tem 32 bytes aleatórios; o banco guarda só o SHA-256 dele, com validade de 30 minutos.
-// - Uma nova solicitação substitui o token anterior do mesmo usuário.
-// - A redefinição consome o token numa única gravação condicional: troca a senha, incrementa versaoSessao
-//   (o que derruba todas as sessões) e remove o token. Só um uso vence.
-// - A API nunca devolve o token nem o link.
-
 const VALIDADE_MS = 30 * 60 * 1000;
 const REGEX_TOKEN = /^[a-f0-9]{64}$/;
 
@@ -30,13 +23,6 @@ function urlBaseFrontend() {
   return ambiente.frontendUrl && ambiente.frontendUrl !== '*' ? ambiente.frontendUrl.replace(/\/+$/, '') : 'http://localhost:5173';
 }
 
-// PONTO DE INTEGRAÇÃO DO PROVEDOR DE E-MAIL (pendente: depende de contratar um provedor e configurar credenciais).
-// Devolve o canal que entrega o link ao dono da conta, ou null quando não há nenhum.
-// Hoje o único canal é o console, e só no desenvolvimento local, com as DUAS condições juntas:
-//   NODE_ENV=development  e  PASSWORD_RESET_DEV_LINK=console
-// Em teste, produção ou qualquer outra combinação, não há canal: a solicitação responde "indisponível",
-// nenhum token é criado e nada é registrado.
-// Para ligar um provedor real, devolva aqui { enviar: async (email, link) => ... } quando ele estiver configurado.
 function canalDeEntrega() {
   if (process.env.NODE_ENV === 'development' && process.env.PASSWORD_RESET_DEV_LINK === 'console') {
     return {
@@ -52,7 +38,6 @@ function normalizarEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
 
-// Mesma regra da troca/cadastro: pelo menos oito caracteres, sem truncar os 72 bytes do bcrypt.
 function motivoSenhaInvalida(senha, confirmacao) {
   const motivo = motivoNovaSenhaInvalida(senha);
   if (motivo) return motivo;
@@ -60,8 +45,6 @@ function motivoSenhaInvalida(senha, confirmacao) {
   return null;
 }
 
-// a resposta é a mesma exista o e-mail ou não. Os dois caminhos fazem o mesmo trabalho:
-// gerar o token e uma única gravação condicional pelo e-mail (que simplesmente não encontra nada).
 async function solicitar(emailBruto) {
   const canal = canalDeEntrega();
   if (!canal) return { status: 503, mensagem: MENSAGEM_INDISPONIVEL };
@@ -75,7 +58,6 @@ async function solicitar(emailBruto) {
       { projection: { email: 1 } }
     );
     if (usuario) {
-      // o token vai no fragmento (#): navegadores não o enviam ao servidor nem no cabeçalho Referer.
       const link = `${urlBaseFrontend()}/redefinir-senha#token=${token}`;
       try {
         await canal.enviar(usuario.email, link);
