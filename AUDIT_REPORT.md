@@ -502,3 +502,39 @@ Uma execução local intermediária teve 2 falhas em `exclusoes.test.js` e `segu
    - O e-mail duplicado continua com a mensagem específica `Já existe um usuário cadastrado com este e-mail.` (fora do pedido). Ele é checado antes do CPF.
    - A mensagem sugere "recuperar sua senha", mas a recuperação por e-mail responde "indisponível" enquanto não houver provedor de e-mail.
 4. **CPFs inválidos já gravados** continuam no banco (intencional, para não bloquear contas existentes).
+
+### N-01 — Unicidade de e-mail e CPF dependia do `autoIndex` — CORRIGIDO (`main`, sem commit)
+
+**Como apareceu:** depois de integrar H-01, M-01 e M-03 na `main`, a suíte completa no Docker falhou em 3 de 3 rodadas (152/153). O teste "cadastros simultâneos com o mesmo CPF" do M-03 criou 3 contas com o mesmo CPF; rodando o arquivo sozinho, passava.
+
+**Causa raiz (confirmada por diagnóstico):**
+- Os índices únicos de `email` e `cpf` eram criados só pelo `autoIndex` do Mongoose, em segundo plano, logo depois de a API conectar.
+- Se cadastros simultâneos chegam antes do índice existir, duplicatas entram. Com duplicatas no banco, a criação do índice único **falha e não é tentada de novo, sem aviso**.
+- No diagnóstico (suíte completa), depois da rajada só existia o índice `_id_`, e `cpf_1` não apareceu em 10 s. Rodando sozinho, o índice ficou pronto em 352 ms e a rajada respondeu `201, 409×5`.
+- O problema é anterior ao M-03; o teste novo só o expôs. Em produção, o risco maior é numa base nova ou restaurada, ou com contas duplicadas antigas: o banco fica sem a garantia de unicidade e ninguém percebe.
+
+**Correção (mesmo padrão dos índices de contrato e avaliação):**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/models/Usuario.js` | `garantirIndicesUsuario()` instala (`createIndexes`) e confere os índices únicos de `email` e `cpf`; `protecaoCadastroDisponivel()` guarda o resultado e, se falhar, tenta de novo no máximo uma vez a cada 30 s (evita disparar uma criação de índice por requisição durante um ataque); `configurarProtecaoCadastroParaTeste()` só para testes. |
+| `backend/src/controllers/autenticacaoController.js` | sem os índices verificados, o cadastro responde **503** e nada é gravado (falha fechada). |
+| `backend/src/server.js`, `backend/src/scripts/indices.js` | instalam os índices antes de a API aceitar requisições e registram o resultado. |
+| `backend/test/cadastroIndices.test.js` (novo) | 3 testes com a coleção começando **sem índices**: rajada de 8 cadastros com o mesmo CPF; rajada com o mesmo e-mail; contas antigas duplicadas bloqueando o cadastro (503) até o operador resolver, com volta automática sem reiniciar a API. |
+
+**Isolamento do banco:** testes locais contra o container `workly-idx-mongo` (`127.0.0.1:27118`); antes de rodar, conferi que o hostname do servidor era o ID do container (`1f72194d0425`). A suíte completa e a subida da stack rodaram em projetos Docker próprios, derrubados com `down --volumes`. O MongoDB do host não foi acessado.
+
+**Testes e resultados:**
+
+| Verificação | Resultado |
+|---|---|
+| Testes novos (3) contra o código **sem a correção** | **3 fail**: 8 contas com o mesmo CPF, 8 com o mesmo e-mail, e cadastro gravado (201) mesmo com duplicatas antigas |
+| Testes novos com a correção | **3/3 pass** |
+| Backend local isolado (17 arquivos, sem os 2 de backup com 27017 fixo) | **140/140 pass** |
+| Perfil de testes do CI no Docker, suíte completa | **156/156 pass em 3 de 3 rodadas** (antes: 152/153) |
+| Subida real da stack no Docker | log mostra "Proteção contra e-mail e CPF duplicados ativa."; smoke do CI aprovado |
+
+**Limitações restantes:**
+1. **Bases com contas duplicadas antigas:** o índice único não pode ser criado, então **novos cadastros ficam bloqueados (503)** até alguém resolver as duplicatas. É a escolha segura: a alternativa seria aceitar cadastros sem garantia de unicidade. O motivo e a chave repetida aparecem no log.
+2. **Troca de e-mail no perfil** (`PUT /api/usuarios/perfil`) também depende do índice único de `email` contra pedidos simultâneos, mas não foi bloqueada por esta proteção. Com o índice instalado na inicialização, o caso normal está coberto; ficou fora do escopo.
+3. **Índice removido com a API no ar:** a proteção fica em cache depois de verificada; só é revalidada depois de reiniciar a API.

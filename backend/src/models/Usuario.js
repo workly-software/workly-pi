@@ -86,4 +86,52 @@ usuarioSchema.index({ tipoConta: 1, localizacao: 1 });
 usuarioSchema.index({ tipoConta: 1, disponibilidade: 1 });
 usuarioSchema.index({ avaliacaoMedia: -1, totalAvaliacoes: -1 });
 
-module.exports = mongoose.model('Usuario', usuarioSchema);
+const Usuario = mongoose.model('Usuario', usuarioSchema);
+
+// e-mail e CPF únicos dependem dos índices do banco: a consulta antes de gravar não segura pedidos simultâneos.
+// O autoIndex roda em segundo plano; se duplicatas entrarem antes dele, o índice deixa de ser criado.
+// Por isso os índices são instalados e conferidos explicitamente, e sem eles o cadastro fica bloqueado.
+const protecao = { disponivel: false, verificadoEm: 0, emAndamento: null };
+const intervalos = { novaTentativaMs: 30 * 1000 };
+
+async function garantirIndicesUsuario() {
+  try {
+    await Usuario.createIndexes();
+    const unicos = (await Usuario.collection.indexes()).filter((indice) => indice.unique && !indice.partialFilterExpression);
+    const temUnico = (campo) =>
+      unicos.some((indice) => Object.keys(indice.key).length === 1 && indice.key[campo] === 1);
+    protecao.disponivel = temUnico('email') && temUnico('cpf');
+    if (!protecao.disponivel) console.error('ATENÇÃO: índices únicos de e-mail e CPF com definição inesperada.');
+  } catch (error) {
+    // normalmente, contas antigas duplicadas: o erro traz a chave repetida para o operador resolver.
+    console.error(
+      'ATENÇÃO: índices únicos de e-mail e CPF não instalados; novos cadastros ficarão bloqueados.',
+      error?.message || error
+    );
+    protecao.disponivel = false;
+  }
+  protecao.verificadoEm = Date.now();
+  return protecao.disponivel;
+}
+
+// usada antes de criar contas. Indisponível: tenta reinstalar no máximo uma vez por intervalo.
+async function protecaoCadastroDisponivel() {
+  if (protecao.disponivel) return true;
+  if (protecao.emAndamento) return protecao.emAndamento;
+  if (protecao.verificadoEm && Date.now() - protecao.verificadoEm < intervalos.novaTentativaMs) return false;
+  protecao.emAndamento = garantirIndicesUsuario().finally(() => {
+    protecao.emAndamento = null;
+  });
+  return protecao.emAndamento;
+}
+
+// só para testes: ajusta o intervalo e força a próxima verificação.
+function configurarProtecaoCadastroParaTeste({ novaTentativaMs, expirar } = {}) {
+  if (novaTentativaMs !== undefined) intervalos.novaTentativaMs = novaTentativaMs;
+  if (expirar) Object.assign(protecao, { disponivel: false, verificadoEm: 0 });
+}
+
+module.exports = Usuario;
+module.exports.garantirIndicesUsuario = garantirIndicesUsuario;
+module.exports.protecaoCadastroDisponivel = protecaoCadastroDisponivel;
+module.exports.configurarProtecaoCadastroParaTeste = configurarProtecaoCadastroParaTeste;

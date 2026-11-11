@@ -4,6 +4,7 @@ const ambiente = require('./config/ambiente');
 const { popularBancoDemo } = require('./seed');
 const { garantirIndicesContrato, relatarProblemaIndice } = require('./models/Contrato');
 const { garantirIndicesAvaliacao } = require('./models/Avaliacao');
+const { garantirIndicesUsuario } = require('./models/Usuario');
 const { recuperarExclusoesPendentes } = require('./services/contaService');
 
 const INTERVALO_RECUPERACAO_MS = 10 * 60 * 1000;
@@ -23,6 +24,8 @@ async function recuperarExclusoes() {
 // instala e verifica índices críticos sem depender do autoIndex. Sem o índice único a API continua
 // no ar para consultas, mas recusa novos pedidos e propostas (503) até a proteção ser restabelecida.
 async function prepararIndices() {
+  // e-mail e CPF únicos antes de aceitar cadastros; sem eles, o cadastro responde 503 (falha registrada no log).
+  if (await garantirIndicesUsuario()) console.log('Proteção contra e-mail e CPF duplicados ativa.');
   const resultado = await garantirIndicesContrato();
   if (resultado.instalado) console.log('Proteção contra contratos duplicados ativa.');
   else relatarProblemaIndice(resultado);

@@ -62,6 +62,11 @@ exports.cadastrar = async (req, res) => {
     if (emailExistente) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
     if (cpfExistente) return erro(res, 409, MENSAGEM_CPF_INDISPONIVEL);
 
+    // a consulta acima não basta contra cadastros simultâneos: sem os índices únicos verificados, nada é criado.
+    if (!(await Usuario.protecaoCadastroDisponivel())) {
+      return erro(res, 503, 'Novos cadastros estão temporariamente indisponíveis. Tente novamente mais tarde.');
+    }
+
     await Usuario.create({
       nome: String(nome).trim(),
       email: String(email).toLowerCase().trim(),
