@@ -7,7 +7,8 @@ import {
   updateProfile,
   updateAccountType,
   updatePassword,
-  deleteAccount
+  deleteAccount,
+  emailChanged
 } from '../../services/profileService';
 import { limparSessao, obterUsuario } from '../../services/authService';
 import { defaultProfileImage } from '../../services/catalogService';
@@ -152,6 +153,20 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
       )
         return;
     }
+    // the login e-mail only changes with the current password; the other sessions are signed out.
+    let senhaAtual;
+    if (section === 'profile' && emailChanged(obterUsuario()?.email, values.email)) {
+      const confirmation = await showAuthAlert({
+        icon: 'warning',
+        title: 'Confirme sua senha',
+        text: 'Para alterar o e-mail de acesso, informe sua senha atual. Os outros dispositivos conectados serão desconectados.',
+        password: { label: 'Senha atual', required: 'Informe sua senha atual.' },
+        confirmText: 'Alterar e-mail',
+        cancelText: 'Cancelar'
+      });
+      if (!confirmation.isConfirmed) return;
+      senhaAtual = confirmation.value;
+    }
     const titles = {
       profile: 'Perfil atualizado!',
       portfolio: 'Portfólio atualizado!',
@@ -203,7 +218,8 @@ export default function ProfileSettings({ user, reload, onPhoto }) {
                   'instagram',
                   'areaAtuacao'
                 ]),
-                nome: `${values.firstName || ''} ${values.lastName || ''}`.trim()
+                nome: `${values.firstName || ''} ${values.lastName || ''}`.trim(),
+                ...(senhaAtual ? { senhaAtual } : {})
               }
             : section === 'portfolio'
               ? group([

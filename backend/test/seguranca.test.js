@@ -271,7 +271,9 @@ test('perfil: valida tipos e formatos, devolve 409 para e-mail em uso e salva da
     [{ bio: 'x'.repeat(1001) }, 400],
     [{ notificacoesEmail: 'talvez' }, 400],
     [{ nome: '   ' }, 400],
-    [{ email: outro.email.toUpperCase() }, 409]
+    // M-02: trocar o e-mail exige a senha atual; sem ela, a rota não confirma se o e-mail já existe.
+    [{ email: outro.email.toUpperCase() }, 400],
+    [{ email: outro.email.toUpperCase(), senhaAtual: 'senha-forte-1' }, 409]
   ];
   for (const [corpo, esperado] of casos) {
     const resposta = await chamar('PUT', '/api/usuarios/perfil', { auth, json: corpo });
@@ -280,7 +282,7 @@ test('perfil: valida tipos e formatos, devolve 409 para e-mail em uso e salva da
   }
   const valido = await chamar('PUT', '/api/usuarios/perfil', {
     auth,
-    json: { nome: 'Nome Novo', email: 'NOVO@teste.local', site: 'meusite.com.br', notificacoesEmail: 'false', tipoConta: 'Freelancer' }
+    json: { nome: 'Nome Novo', email: 'NOVO@teste.local', senhaAtual: 'senha-forte-1', site: 'meusite.com.br', notificacoesEmail: 'false', tipoConta: 'Freelancer' }
   });
   assert.equal(valido.status, 200);
   const salvo = await Usuario.findById(usuario._id);

@@ -7,7 +7,8 @@ import {
   updateAccountType,
   updatePassword,
   uploadPhoto,
-  deleteAccount
+  deleteAccount,
+  emailChanged
 } from '../src/services/profileService.js';
 import {
   mergeDashboardWithFallback,
@@ -80,6 +81,42 @@ test('profile services use official endpoints, bearer, partial fields and crop u
     (error) => error.status === 401 && error.message === 'Senha atual incorreta.'
   );
   assert.equal(values.get('token'), 'qa');
+});
+test('changing the login e-mail is detected like the backend does (M-02)', () => {
+  assert.equal(emailChanged('ana@x.com', ' ANA@x.com '), false);
+  assert.equal(emailChanged('ana@x.com', 'outra@x.com'), true);
+  assert.equal(emailChanged(undefined, 'ana@x.com'), true);
+  assert.equal(emailChanged('ana@x.com', ''), false);
+});
+test('e-mail change sends the current password, keeps the session on 403 and stores the new token', async (t) => {
+  const values = new Map([['token', 'antigo']]);
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key)
+    }
+  });
+  t.after(() =>
+    previous ? Object.defineProperty(globalThis, 'localStorage', previous) : delete globalThis.localStorage
+  );
+  const bodies = [];
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return Response.json({ sucesso: false, mensagem: 'Senha atual incorreta.' }, { status: 403 });
+  });
+  await assert.rejects(updateProfile({ email: 'novo@x.com', senhaAtual: 'errada' }), (e) => e.status === 403);
+  assert.equal(values.get('token'), 'antigo', 'a wrong password must not end the session');
+  assert.deepEqual(bodies[0], { email: 'novo@x.com', senhaAtual: 'errada' });
+
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({ sucesso: true, token: 'novo-token', user: { nome: 'Ana', email: 'novo@x.com' } })
+  );
+  await updateProfile({ email: 'novo@x.com', senhaAtual: 'certa' });
+  assert.equal(values.get('token'), 'novo-token', 'the other sessions were revoked; this one keeps working');
+  assert.equal(JSON.parse(values.get('user')).email, 'novo@x.com');
 });
 test('dashboard fallback excludes pending contracts and uses useful official dashboard', () => {
   const leads = [

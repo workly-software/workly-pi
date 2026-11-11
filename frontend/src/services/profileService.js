@@ -34,6 +34,11 @@ async function mutate(path, method, data) {
   return response;
 }
 export const updateProfile = (data) => mutate('/api/usuarios/perfil', 'PUT', data);
+// same comparison as the backend: changing the login e-mail requires the current password.
+const normalizedEmail = (value) => String(value || '').trim().toLowerCase();
+export function emailChanged(current, next) {
+  return Boolean(normalizedEmail(next)) && normalizedEmail(next) !== normalizedEmail(current);
+}
 export const updateAccountType = (data) => mutate('/api/usuarios/tipo-conta', 'PATCH', data);
 export function updatePassword(data) {
   const problem = newPasswordProblem(data.novaSenha, data.confirmarSenha);

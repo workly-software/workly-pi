@@ -13,7 +13,7 @@
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 1 (H-01 corrigido; ver seção 11) |
-| MEDIUM | 6 (M-01 corrigido, M-03 parcial; ver seção 11) |
+| MEDIUM | 6 (M-01 e M-02 corrigidos, M-03 parcial; ver seção 11) |
 | LOW | 15 |
 | INFORMATIONAL | 5 |
 | Falsos positivos investigados | 14 |
@@ -106,6 +106,7 @@ arquivos estáticos                                               MongoDB 8 (Mon
 - **Impacto:** quem obtém o token (XSS futuro, máquina compartilhada, extensão maliciosa, M-04) tira a vítima da própria conta. Quando a recuperação de senha por e-mail for ligada, o atacante assume a conta de forma definitiva.
 - **Correção:** exigir a senha atual para trocar o e-mail, confirmar o novo endereço por link, incrementar `versaoSessao` e avisar o e-mail antigo.
 - **Reproduzido:** sim.
+- **Status: CORRIGIDO** na `main` (2026-11-11; ainda sem commit): senha atual exigida e sessões encerradas. A confirmação por link e o aviso ao e-mail antigo dependem de um provedor de e-mail (seção 11).
 
 #### M-03 — CPF sem dígito verificador, truncado, e enumerável
 - **Severidade / confiança:** MEDIUM / CONFIRMED
@@ -538,3 +539,54 @@ Uma execução local intermediária teve 2 falhas em `exclusoes.test.js` e `segu
 1. **Bases com contas duplicadas antigas:** o índice único não pode ser criado, então **novos cadastros ficam bloqueados (503)** até alguém resolver as duplicatas. É a escolha segura: a alternativa seria aceitar cadastros sem garantia de unicidade. O motivo e a chave repetida aparecem no log.
 2. **Troca de e-mail no perfil** (`PUT /api/usuarios/perfil`) também depende do índice único de `email` contra pedidos simultâneos, mas não foi bloqueada por esta proteção. Com o índice instalado na inicialização, o caso normal está coberto; ficou fora do escopo.
 3. **Índice removido com a API no ar:** a proteção fica em cache depois de verificada; só é revalidada depois de reiniciar a API.
+
+### M-02 — CORRIGIDO (`main`, sem commit)
+
+**Causa raiz:** `PUT /api/usuarios/perfil` aplicava o novo `email` só com o token, sem conferir a senha, sem encerrar outras sessões e confirmando, para qualquer portador do token, se um e-mail já existia (409).
+
+**Regra adotada:**
+- **Trocar** o e-mail exige a senha atual. Reenviar o mesmo e-mail (o formulário sempre manda o campo), mesmo com outra caixa ou espaços, não exige nada; os outros campos do perfil continuam sem senha.
+- Com a senha certa, o e-mail muda, `versaoSessao` é incrementada (todos os outros tokens deixam de valer) e a resposta traz um token novo para a sessão atual.
+- Senha errada responde **403**, não 401, porque o frontend trata 401 nessa rota como sessão expirada. Nenhum campo é gravado.
+- O conflito "e-mail já cadastrado" (409) só é revelado depois da senha certa.
+- A gravação é condicionada à versão da sessão, ao e-mail e à senha lidos: duas trocas simultâneas não passam juntas.
+
+**Alterações:**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/controllers/usuarioController.js` | `atualizarPerfil` separa a troca real de e-mail para `trocarEmail` (senha, versão da sessão, gravação condicional, `$inc versaoSessao`, token novo); sem troca, o fluxo anterior segue igual. |
+| `frontend/src/services/profileService.js` | `emailChanged(atual, novo)`, mesma comparação do backend. O `mutate` já gravava o token novo. |
+| `frontend/src/components/profile/ProfileSettings.jsx` | quando o e-mail muda, um modal pede a senha atual antes de salvar; cancelar não envia nada. |
+| `backend/test/emailReautenticacao.test.js` (novo), `frontend/test/profile.test.js` | 7 testes de backend e 2 de frontend. |
+| `backend/test/seguranca.test.js` | o teste de perfil exigia o comportamento antigo (trocar o e-mail sem senha → 200, e 409 sem senha). Atualizado para enviar `senhaAtual` quando o e-mail muda, com um caso a mais: sem senha → 400. As outras asserções (tipos, formatos, 409, dados salvos) foram mantidas. |
+
+**Isolamento do banco:** testes locais e o teste no navegador rodaram contra containers `mongo:8.0` dedicados em `127.0.0.1:27118`, conferidos pelo hostname antes de cada uso; a suíte completa rodou no perfil de testes do CI no Docker. O MongoDB do host não foi acessado.
+
+**Testes e resultados:**
+
+| Verificação | Resultado |
+|---|---|
+| Testes novos (7) contra o código **original** | 2 pass (fluxos legítimos sem troca de e-mail), **5 fail** (vulnerabilidade reproduzida) |
+| Testes novos com a correção | **7/7 pass** |
+| Trocas simultâneas com o mesmo token (6 pedidos) | 1 × 200; `versaoSessao` sobe uma única vez |
+| Navegador (Playwright, API + Vite reais): salvar só a bio | sem pedido de senha, "Perfil atualizado!" |
+| Navegador: trocar o e-mail com senha errada | modal "Confirme sua senha" → "Senha atual incorreta."; continua logado |
+| Navegador: trocar com a senha certa | "E-mail atualizado. As outras sessões foram encerradas."; token trocado; sessão paralela → 401; login com e-mail antigo → 401, com o novo → 200 |
+| Backend local isolado (18 arquivos) | **147/147 pass** |
+| Perfil de testes do CI no Docker, backend | **163/163 pass** (2 de 2 rodadas) |
+| Frontend (local e Docker) + build | **64/64 pass**, build ok |
+
+**Antes e depois:**
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| Token roubado troca o e-mail | 200; dono perde o login | 400 sem senha, 403 com senha errada |
+| Dono troca o e-mail com a senha | 200; outros tokens seguem válidos | 200; outros tokens → 401; esta sessão recebe token novo |
+| Portador do token testa se um e-mail existe | 409 imediato | só depois da senha certa |
+| Editar bio/telefone (com o mesmo e-mail no corpo) | 200 | 200, sem senha |
+
+**Limitações restantes:**
+1. **Confirmação do novo endereço e aviso ao e-mail antigo** dependem de um provedor de e-mail, que o projeto não tem. Hoje quem sabe a senha troca o e-mail para qualquer endereço sem prová-lo.
+2. **Tentativas de senha sem limite** nesta rota, como já era em troca de senha e exclusão de conta (L-08): quem tem o token pode testar senhas. Fica para o L-08.
+3. **Token em `localStorage` e logout só no navegador** continuam (M-04).

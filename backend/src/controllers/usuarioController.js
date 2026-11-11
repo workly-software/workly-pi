@@ -512,6 +512,46 @@ exports.buscarPerfilPublico = async (req, res) => {
   }
 };
 
+// troca de e-mail: confere a senha atual, grava condicionada à versão da sessão (duas trocas simultâneas
+// não passam juntas) e incrementa a versão, derrubando os outros tokens; esta sessão recebe um token novo.
+// senha errada responde 403, não 401, porque o frontend trata 401 nesta rota como sessão expirada.
+async function trocarEmail(req, res, atual, campos) {
+  const senhaAtual = obterCampo(req.body, ['senhaAtual', 'currentPassword']);
+  if (typeof senhaAtual !== 'string' || !senhaAtual) {
+    return erro(res, 400, 'Informe sua senha atual para alterar o e-mail.');
+  }
+  const versao = Number(req.user.sv || 0);
+  if (Number(atual.versaoSessao || 0) !== versao) {
+    return erro(res, 409, 'Suas credenciais foram atualizadas. Entre novamente antes de alterar o e-mail.');
+  }
+  const senhaCorreta = await bcrypt.compare(senhaAtual, atual.senha).catch(() => false);
+  if (!senhaCorreta) return erro(res, 403, 'Senha atual incorreta.');
+
+  // a checagem vem depois da senha: sem ela, a rota não confirma se um e-mail já existe.
+  const emUso = await Usuario.exists({ email: campos.email, _id: { $ne: atual._id } });
+  if (emUso) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
+
+  const atualizado = await Usuario.findOneAndUpdate(
+    {
+      _id: atual._id,
+      email: atual.email,
+      senha: atual.senha,
+      removido: { $ne: true },
+      exclusaoConfirmadaEm: null,
+      ...(versao === 0 ? { $or: [{ versaoSessao: 0 }, { versaoSessao: { $exists: false } }] } : { versaoSessao: versao })
+    },
+    { $set: campos, $inc: { versaoSessao: 1 } },
+    { new: true, runValidators: true }
+  );
+  if (!atualizado) {
+    return erro(res, 409, 'Suas credenciais foram atualizadas durante esta operação. Entre novamente.');
+  }
+  return sucesso(res, 200, 'E-mail atualizado. As outras sessões foram encerradas.', null, {
+    token: emitirToken(atualizado),
+    user: mapUsuario(req, atualizado)
+  });
+}
+
 // salva dados normais do perfil.
 // tipo de conta não entra aqui porque muda permissões e tem rota própria.
 exports.atualizarPerfil = async (req, res) => {
@@ -519,10 +559,15 @@ exports.atualizarPerfil = async (req, res) => {
     const { campos, erro: mensagemInvalida } = validarAtualizacaoPerfil(req.body);
     if (mensagemInvalida) return erro(res, 400, mensagemInvalida);
 
-    if (campos.email) {
-      const emUso = await Usuario.exists({ email: campos.email, _id: { $ne: req.user.id_usuario } });
-      if (emUso) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
+    const atual = await Usuario.findById(req.user.id_usuario).select('email senha versaoSessao');
+    if (!atual) return erro(res, 404, 'Usuário não encontrado.');
+
+    // o e-mail é a credencial de login: trocá-lo exige a senha atual e encerra as outras sessões.
+    // reenviar o mesmo e-mail (o formulário sempre manda o campo) não exige nada.
+    if (campos.email && campos.email !== atual.email) {
+      return trocarEmail(req, res, atual, campos);
     }
+    delete campos.email;
 
     const usuario = await Usuario.findByIdAndUpdate(req.user.id_usuario, campos, {
       new: true,
