@@ -1,9 +1,10 @@
+// só remove a pontuação. Não corta em 11 dígitos: um CPF longo demais é recusado, não truncado.
 function normalizarCpf(cpf = '') {
-  return String(cpf).replace(/\D/g, '').slice(0, 11);
+  return String(cpf).replace(/\D/g, '');
 }
 
 function formatarCpf(cpf = '') {
-  const digits = normalizarCpf(cpf);
+  const digits = normalizarCpf(cpf).slice(0, 11);
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
   if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
@@ -38,26 +39,32 @@ function calcularDigito(cpfParcial, fatorInicial) {
   return resto === 10 || resto === 11 ? 0 : resto;
 }
 
-function validarCpf(cpf = '') {
-  const digits = normalizarCpf(cpf);
-
-  // Validação simplificada para o PI:
-  // - precisa ter 11 números;
-  // - não pode ser todos os números iguais, tipo 111.111.111-11;
-  // - CPF repetido continua sendo bloqueado pelo banco/controller.
-  // Não validamos sequência nem dígito verificador aqui para não travar CPF de teste.
-  if (digits.length !== 11) return false;
-  if (cpfRepetido(digits)) return false;
-
-  return true;
+function digitosVerificadoresValidos(digits) {
+  return (
+    calcularDigito(digits.slice(0, 9), 10) === Number(digits[9]) &&
+    calcularDigito(digits.slice(0, 10), 11) === Number(digits[10])
+  );
 }
 
-function motivoCpfInvalido(cpf = '') {
+// CPF válido: 11 números, dígitos verificadores corretos e base que não seja repetida (111.111.111-11)
+// nem sequencial (123.456.789-09), combinações que têm dígitos certos mas não são de ninguém.
+function validarCpf(cpf = '') {
   const digits = normalizarCpf(cpf);
+  if (digits.length !== 11) return false;
+  if (cpfRepetido(digits) || cpfSequencial(digits)) return false;
+  return digitosVerificadoresValidos(digits);
+}
+
+// recebe o valor como veio na requisição: além dos números, só aceita a pontuação usual (ponto, hífen, espaço).
+function motivoCpfInvalido(cpf = '') {
+  const texto = typeof cpf === 'string' || typeof cpf === 'number' ? String(cpf).trim() : '';
+  const digits = normalizarCpf(texto);
 
   if (!digits) return 'CPF é obrigatório.';
+  if (!/^[\d.\-\s]+$/.test(texto)) return 'CPF inválido.';
   if (digits.length !== 11) return 'CPF deve ter 11 números.';
   if (cpfRepetido(digits)) return 'CPF não pode ter todos os números iguais.';
+  if (!validarCpf(digits)) return 'CPF inválido.';
 
   return '';
 }

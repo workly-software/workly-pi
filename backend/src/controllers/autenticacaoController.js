@@ -11,6 +11,10 @@ const { motivoNovaSenhaInvalida } = require('../utils/senhaUtils');
 // regex simples para e-mail — valida formato básico sem consulta externa.
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// CPF já cadastrado: a mensagem não confirma que o CPF existe na base.
+const MENSAGEM_CPF_INDISPONIVEL =
+  'Não foi possível concluir o cadastro com os dados informados. Confira as informações ou, se já possui uma conta, tente entrar ou recuperar sua senha.';
+
 // cadastro: valida campos, verifica e-mail e cpf únicos, cria o usuário.
 exports.cadastrar = async (req, res) => {
   try {
@@ -33,8 +37,9 @@ exports.cadastrar = async (req, res) => {
     const erroSenha = motivoNovaSenhaInvalida(senha);
     if (erroSenha) return erro(res, 400, erroSenha);
 
+    // valida o texto recebido (pontuação, tamanho, dígitos verificadores) antes de normalizar.
+    const erroCpf = motivoCpfInvalido(cpf);
     const cpfNormalizado = normalizarCpf(cpf);
-    const erroCpf = motivoCpfInvalido(cpfNormalizado);
     if (erroCpf) {
       return erro(res, 400, erroCpf);
     }
@@ -55,7 +60,7 @@ exports.cadastrar = async (req, res) => {
     ]);
 
     if (emailExistente) return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');
-    if (cpfExistente) return erro(res, 409, 'Já existe um usuário cadastrado com este CPF.');
+    if (cpfExistente) return erro(res, 409, MENSAGEM_CPF_INDISPONIVEL);
 
     await Usuario.create({
       nome: String(nome).trim(),
@@ -72,7 +77,7 @@ exports.cadastrar = async (req, res) => {
   } catch (error) {
     if (error?.code === 11000) {
       if (error.keyPattern?.cpf || error.keyValue?.cpf) {
-        return erro(res, 409, 'Já existe um usuário cadastrado com este CPF.');
+        return erro(res, 409, MENSAGEM_CPF_INDISPONIVEL);
       }
       if (error.keyPattern?.email || error.keyValue?.email) {
         return erro(res, 409, 'Já existe um usuário cadastrado com este e-mail.');

@@ -19,7 +19,13 @@ const usuarioSchema = new mongoose.Schema(
       trim: true,
       set: normalizarCpf,
       validate: {
-        validator: validarCpf,
+        // CPF novo ou alterado precisa ser válido. Contas antigas cadastradas antes da checagem dos
+        // dígitos verificadores continuam salvando outros campos sem quebrar.
+        validator: function (valor) {
+          const documento = typeof this?.isModified === 'function' ? this : null;
+          if (documento && !documento.isNew && !documento.isModified('cpf')) return true;
+          return validarCpf(valor);
+        },
         message: 'CPF inválido.'
       }
     },

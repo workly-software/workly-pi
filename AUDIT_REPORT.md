@@ -13,7 +13,7 @@
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 1 (H-01 corrigido; ver seção 11) |
-| MEDIUM | 6 (M-01 corrigido; ver seção 11) |
+| MEDIUM | 6 (M-01 corrigido, M-03 parcial; ver seção 11) |
 | LOW | 15 |
 | INFORMATIONAL | 5 |
 | Falsos positivos investigados | 14 |
@@ -115,6 +115,7 @@ arquivos estáticos                                               MongoDB 8 (Mon
 - **Impacto:** (a) contas falsas ilimitadas (alimenta M-01); (b) quem conhece o CPF de uma pessoa pode registrá-lo antes e impedir o cadastro dela; (c) qualquer pessoa descobre se um CPF está cadastrado (dado pessoal, LGPD).
 - **Correção:** validar os dígitos verificadores (a função `calcularDigito` já existe), rejeitar entradas com mais de 11 dígitos em vez de truncar e devolver uma mensagem genérica de conflito no cadastro.
 - **Reproduzido:** sim.
+- **Status: PARCIALMENTE CORRIGIDO** na branch `fix/security-h01-rate-limiting` (2026-11-11; ainda sem commit). Dígitos verificadores, truncamento e bases sequenciais foram corrigidos. Contas falsas com CPF calculado e a enumeração continuam abertas e dependem de decisão de produto (seção 11).
 
 #### M-04 — Sessão de 7 dias em `localStorage`, sem revogação no logout
 - **Severidade / confiança:** MEDIUM / CONFIRMED
@@ -439,3 +440,65 @@ Uma execução local intermediária teve 2 falhas em `exclusoes.test.js` e `segu
 
 **Problema encontrado à parte (não corrigido, fora do escopo):**
 - **T-01 — Testes de backup usam o MongoDB do host.** `backend/test/backupRestore.test.js:18-19` e `backend/test/backupRestoreIntegracao.test.js:14` fixam `mongodb://127.0.0.1:27017/...` e ignoram `MONGO_TEST_URI`. O primeiro sempre conecta e cria/apaga uma base `workly_test_backup_<pid>` no Mongo que estiver na 27017. Numa máquina com o serviço MongoDB instalado, isso é o banco local do desenvolvedor, o que explica parte das sobras `workly_test_*` encontradas nele. As operações destrutivas se limitam a nomes `workly_test_*`, mas o isolamento depende só do nome. Recomendação: respeitar `MONGO_TEST_URI` (só trocando o nome da base) e rodar localmente apenas com Mongo isolado.
+
+### M-03 — PARCIALMENTE CORRIGIDO (branch `fix/security-h01-rate-limiting`, sem commit)
+
+**Causa raiz:**
+- `validarCpf` conferia só o tamanho e se todos os dígitos eram iguais. O comentário dizia que os dígitos verificadores não eram checados "para não travar CPF de teste".
+- `normalizarCpf` cortava a entrada em 11 dígitos, então um CPF longo demais era gravado truncado.
+- O frontend repetia a mesma regra.
+
+**O que foi corrigido:**
+1. **Dígitos verificadores** passam a ser validados no cadastro, no modelo (defesa em profundidade) e no formulário do frontend.
+2. **Sem truncamento:** `normalizarCpf` só remove pontuação; mais de 11 dígitos responde 400 `CPF deve ter 11 números.`.
+3. **Entrada só com números e pontuação usual** (ponto, hífen, espaço); letras, objetos e listas são recusados.
+4. **Bases repetidas ou sequenciais** são recusadas (reaproveita o `cpfSequencial` que existia sem uso), mesmo quando os dígitos verificadores estão certos, como `123.456.789-09`.
+5. **Contas antigas:** o validador do modelo só age quando o CPF é novo ou alterado. Sem essa guarda, qualquer `save()` numa conta antiga com CPF inválido falharia; isso foi verificado em experimento (o `save()` sem a guarda deu `ValidationError cpf`). Nenhum CPF existente é alterado.
+
+**Alterações:**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/utils/cpfUtils.js` | `normalizarCpf` sem `slice`; `validarCpf` com dígitos verificadores e bases sequenciais; `motivoCpfInvalido` recebe o valor bruto e devolve `CPF inválido.` para dígitos errados ou caracteres estranhos. |
+| `backend/src/controllers/autenticacaoController.js` | valida o valor recebido antes de normalizar. |
+| `backend/src/models/Usuario.js` | validador do CPF com guarda para contas antigas. |
+| `frontend/src/services/authValidation.js` | mesma regra no formulário (`CPF inválido`). |
+| `frontend/test/auth.test.js` | a asserção que exigia aceitar `12345678900` (DV inválido) foi trocada pela regra nova; ela documentava justamente o comportamento corrigido. Foram acrescentados casos de CPF válido, sequencial e com DV errado. |
+| `backend/test/cpfCadastro.test.js` (novo) | 10 testes, incluindo comparação com uma implementação de referência independente em 5000 CPFs aleatórios e 2000 válidos. |
+
+**Isolamento do banco:**
+- Container `mongo:8.0` dedicado (`workly-m03-mongo`, `127.0.0.1:27118`). Antes dos testes, conferi que o hostname do servidor era o ID do container (`41d947277b8b`), versão 8.0.34, só bancos de sistema.
+- O MongoDB do host não foi acessado.
+- A suíte completa rodou pelo perfil de testes do CI no Docker (`-p workly-m03`), derrubado com `down --volumes`.
+
+**Testes e resultados:**
+
+| Verificação | Resultado |
+|---|---|
+| Testes novos (10) contra o código **original** | 2 pass, **8 fail** (DV inválido aceito, truncamento, sequencial, caracteres estranhos, modelo, comparação com a referência) |
+| Testes novos com a correção | **10/10 pass** (11/11 depois do teste da mensagem neutra) |
+| Backend local isolado (16 arquivos, sem os 2 de backup com 27017 fixo) | **136/136 pass** |
+| Perfil de testes do CI no Docker, backend (suíte inteira) | **152/152 pass**, 0 skip |
+| Frontend (local e no Docker) | **62/62 pass** |
+
+**Antes e depois:**
+
+| Entrada | Antes | Depois |
+|---|---|---|
+| `12345678900` (DV inválido) | 201 | 400 `CPF inválido.` |
+| CPF válido + `99` (13 dígitos) | 201, gravado truncado | 400 `CPF deve ter 11 números.`; o CPF real continua livre |
+| `123.456.789-09` (DV válido, sequencial) | 201 | 400 |
+| CPF com letras entre os dígitos | 201 | 400 |
+| CPF válido, com ou sem pontuação | 201 | 201 (gravado só com números) |
+| Conta antiga com CPF inválido: login, troca de tipo, edição de perfil | funcionava | continua funcionando; o CPF não é alterado |
+| CPF já cadastrado | 409 `Já existe um usuário cadastrado com este CPF.` | 409 com mensagem neutra (item 3 abaixo) |
+
+**O que continua aberto (por isso "parcial"):**
+1. **(a) Contas falsas:** qualquer pessoa calcula um CPF com dígitos verificadores corretos a partir de 9 dígitos aleatórios. A validação elimina erros de digitação e números inventados sem cálculo, mas **não impede** criar contas falsas em série. O freio atual é o limite de cadastro do H-01 (10 por IP a cada 15 minutos). Resolver de verdade exige verificar a identidade: confirmação por e-mail (depende de contratar o provedor de e-mail) ou consulta do CPF a um serviço oficial ou de KYC.
+2. **(b) Ocupar o CPF de outra pessoa:** quem souber o CPF real de alguém ainda pode cadastrá-lo antes dela. Exige a mesma verificação de identidade, ou um processo de suporte para contestação.
+3. **(c) Enumeração — mensagem trocada por decisão do produto:**
+   - CPF já cadastrado agora responde `409 Não foi possível concluir o cadastro com os dados informados. Confira as informações ou, se já possui uma conta, tente entrar ou recuperar sua senha.`, na checagem prévia e no caminho de pedidos simultâneos (erro de chave duplicada). A mensagem não cita o CPF; o teste `cadastros simultâneos com o mesmo CPF` confere isso (6 pedidos: 1 × 201, 5 × 409 com a mensagem exata).
+   - **Risco residual:** o código 409 e a diferença em relação a outros erros ainda indicam que algum dado já existe, e testar um CPF com um e-mail novo a cada vez continua revelando se o CPF está na base. O freio segue sendo o limite de cadastro do H-01.
+   - O e-mail duplicado continua com a mensagem específica `Já existe um usuário cadastrado com este e-mail.` (fora do pedido). Ele é checado antes do CPF.
+   - A mensagem sugere "recuperar sua senha", mas a recuperação por e-mail responde "indisponível" enquanto não houver provedor de e-mail.
+4. **CPFs inválidos já gravados** continuam no banco (intencional, para não bloquear contas existentes).

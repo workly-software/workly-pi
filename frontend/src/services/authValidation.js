@@ -21,7 +21,21 @@ export function formatCpf(value = '') {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
-// Exact legacy messages and order; CPF deliberately does not check verification digits.
+// Same rule as the backend (backend/src/utils/cpfUtils.js): verification digits must match and
+// repeated or sequential bases (111.111.111-11, 123.456.789-09) are rejected.
+function cpfCheckDigit(digits, startFactor) {
+  const sum = [...digits].reduce((total, d, i) => total + Number(d) * (startFactor - i), 0);
+  const rest = (sum * 10) % 11;
+  return rest === 10 ? 0 : rest;
+}
+export function cpfIsValid(d) {
+  if (!/^\d{11}$/.test(d) || /^(\d)\1{10}$/.test(d)) return false;
+  const base = d.slice(0, 9);
+  if ('01234567890123456789'.includes(base) || '98765432109876543210'.includes(base)) return false;
+  return cpfCheckDigit(base, 10) === Number(d[9]) && cpfCheckDigit(d.slice(0, 10), 11) === Number(d[10]);
+}
+
+// Exact legacy messages and order, plus the verification-digit check.
 export function validateField(name, value, { required = false, type = 'text', senha = '' } = {}) {
   if (type === 'checkbox') return required && !value ? 'Este campo é obrigatório' : '';
   if (name === 'cpf') {
@@ -29,6 +43,7 @@ export function validateField(name, value, { required = false, type = 'text', se
     if (!d) return 'CPF é obrigatório';
     if (d.length !== 11) return 'CPF deve ter 11 números';
     if (/^(\d)\1{10}$/.test(d)) return 'CPF não pode ter todos os números iguais';
+    if (!cpfIsValid(d)) return 'CPF inválido';
     return '';
   }
   const text = String(value || '').trim();
