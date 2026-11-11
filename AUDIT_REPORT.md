@@ -1,0 +1,375 @@
+# Relatório de Auditoria Adversarial — Workly
+
+- **Data:** 2026-11-11
+- **Commit auditado:** `1458769` (branch `main`, árvore limpa)
+- **Escopo:** backend (Express 5 + Mongoose 8), frontend (React 19 + Vite 8), configuração Docker/nginx, CI.
+- **Modo:** somente auditoria. Nenhum arquivo de código, teste ou configuração da aplicação foi alterado.
+
+---
+
+## 1. Resumo executivo
+
+| Severidade | Quantidade |
+|---|---|
+| CRITICAL | 0 |
+| HIGH | 1 (H-01 corrigido; ver seção 11) |
+| MEDIUM | 6 |
+| LOW | 15 |
+| INFORMATIONAL | 5 |
+| Falsos positivos investigados | 14 |
+
+Não encontrei nenhum caminho de bypass de autenticação, IDOR, injeção NoSQL, XSS explorável nem upload malicioso. Tentei todos e os controles resistiram (seção 9). Os problemas reais estão em quatro áreas:
+
+1. **Disponibilidade da autenticação (HIGH).** O limitador de login é global por IP e compartilhado com o cadastro. O backend não confia no proxy, então, atrás do nginx do Docker, **todos os usuários dividem um único balde de 10 requisições a cada 15 minutos**. Reproduzi isso pela UI: um usuário que nunca tinha tentado logar recebeu 429.
+2. **Integridade das avaliações (MEDIUM).** Uma única conta cliente pode gerar um número ilimitado de avaliações 5 estrelas para o mesmo serviço, repetindo contratações. Como o CPF não valida dígito verificador, contas falsas são ilimitadas.
+3. **Gestão de sessão (MEDIUM).** O JWT dura 7 dias e fica no `localStorage`, e o logout só apaga o token no navegador. Quem tiver o token troca o e-mail da conta sem senha, e a vítima fica sem conseguir entrar.
+4. **Validação de entrada e robustez (MEDIUM/LOW).** Campos de texto aceitam até ~1 MB. Cinco endpoints retornam 500 quando o corpo está ausente. A validação de preço do serviço é inconsistente. Há dependências com avisos HIGH.
+
+**Prioridade de correção recomendada:** H-01 → M-01/M-03 → M-02/M-04 → M-05/M-06 → itens LOW.
+
+---
+
+## 2. Visão geral da arquitetura
+
+```
+Navegador (React SPA, token JWT em localStorage)
+   │  Authorization: Bearer <jwt>
+   ▼
+nginx (frontend/deploy/nginx.docker.conf)  ── /api/*, /uploads/* ──►  Express 5 (backend/src/app.js)
+   │  SPA fallback para index.html                                     │  rate-limit (login/cadastro/recuperação)
+   │                                                                   │  autenticacaoMiddleware (JWT HS256 + versaoSessao)
+   ▼                                                                   ▼
+arquivos estáticos                                               MongoDB 8 (Mongoose)
+                                                                 uploads/ (multer em memória → disco)
+```
+
+- **Autenticação:** JWT HS256 com algoritmo fixado, `sv` (versão de sessão) conferida no banco a cada requisição, conta removida bloqueada. Validade de 7 dias.
+- **Autorização:** checagens por recurso nos controllers (contrato: cliente/freelancer; serviço: dono; mensagens: partes do contrato; notificações: destinatário).
+- **Concorrência:** gravações condicionais (`findOneAndUpdate` com status esperado), índice único parcial para contratos ativos, exclusão de conta em duas fases.
+- **Uploads:** validação por bytes mágicos (JPG/PNG/WEBP), nome gerado pelo servidor, servidos com `nosniff` + CSP `sandbox`.
+
+## 3. Inventário da superfície de ataque
+
+| Grupo | Rotas | Auth |
+|---|---|---|
+| Autenticação | `POST /api/autenticacao/{cadastro,register,login,recuperar-senha,redefinir-senha}` | pública (com rate limit) |
+| Serviços | `GET /api/servicos`, `/categoria/:id`, `/category/:id`, `/:id` | pública |
+| | `POST /api/servicos`, `PUT/DELETE /api/servicos/:id` (multipart) | JWT + dono |
+| Usuários | `GET /api/usuarios/publico/:id` | pública |
+| | `GET/PUT/DELETE /api/usuarios/perfil` (+ aliases `/profile`), `PATCH /tipo-conta`, `POST /perfil/foto`, `PUT /perfil/senha` | JWT |
+| Contratos | `POST /api/contratos`, `GET /meus`, `POST /:id/{aceitar,recusar,iniciar,entregar,confirmar,solicitar-ajuste,propor-valor,aprovar-valor,cancelar}`, `PATCH /:id/status` | JWT + parte |
+| Avaliações | `POST /api/avaliacoes`, `GET /minhas` / `GET /servico/:id` (pública) | JWT / pública |
+| Favoritos | `GET/POST /api/favoritos`, `GET/DELETE /servico/:id` | JWT |
+| Mensagens | `POST /api/mensagens`, `GET /nao-lidas`, `/resumo`, `/contrato/:id` | JWT + parte |
+| Notificações | `GET /`, `/nao-lidas`, `PATCH /todas-lidas`, `/contexto/lidas`, `/:id/lida`, `DELETE /:id` | JWT + destinatário |
+| Estáticos | `GET /uploads/*` (só `.jpg/.jpeg/.png/.webp/.svg`) | pública |
+| Scripts operacionais | `backup`, `restore`, `indices`, `recuperarExclusoes`, `seed` | linha de comando |
+
+---
+
+## 4. Achados
+
+### HIGH
+
+#### H-01 — Limitador de login global: atrás do proxy, todos os usuários compartilham 10 tentativas a cada 15 min
+- **Severidade / confiança:** HIGH / CONFIRMED
+- **Local:** `backend/src/app.js:20-27` (instância `limitadorLogin`), `backend/src/app.js:78-82` (mesma instância montada em `/login`, `/cadastro` e `/register`); ausência de `app.set('trust proxy', …)`; `frontend/deploy/nginx.docker.conf:14-18` (não envia `X-Forwarded-For`).
+- **Descrição:** o `express-rate-limit` usa `req.ip` como chave. Sem `trust proxy`, `req.ip` é o endereço do socket. No deploy Docker, esse endereço é sempre o do container nginx. As três rotas usam **a mesma instância**, então login, cadastro e `register` somam no mesmo contador.
+- **Explicação técnica:** a cada 15 minutos, as 10 primeiras requisições de autenticação de **qualquer** usuário esgotam o balde de todos. Basta um atacante enviar 10 logins errados a cada 15 minutos para impedir login e cadastro da plataforma inteira. Cadastros legítimos também consomem a cota de login.
+- **Reprodução:**
+  1. Faça 12 requisições `POST /api/autenticacao/login` com credenciais erradas, alternando `X-Forwarded-For`. Resultado: `401,401,401,401,429,…`. As 5 anteriores vieram de cadastros e logins de outra parte da sondagem, o que mostra o balde compartilhado. O XFF é ignorado.
+  2. Logo em seguida, um cadastro legítimo também retorna `429`.
+  3. Pela UI (navegador → proxy do Vite → API, a mesma topologia do nginx), o login de um usuário demo **que nunca tinha tentado entrar** retornou `429 "Muitas tentativas de login…"`.
+  4. O mesmo usuário conseguiu entrar por `http://[::1]:3100`, outro IP de socket. Isso confirma que a chave é só o IP.
+- **Impacto:** negação de serviço trivial e sem autenticação sobre login e cadastro em produção. Em uso normal, picos de acesso já bloqueiam usuários legítimos.
+- **Correção:** configurar `app.set('trust proxy', 1)` e fazer o nginx enviar `X-Forwarded-For`/`X-Real-IP`. Usar instâncias separadas para login e cadastro. Combinar a chave por IP com uma chave por conta (e-mail normalizado) no login. Considerar `skipSuccessfulRequests: true` no login.
+- **Reproduzido:** sim (API e navegador).
+- **Status: CORRIGIDO** na branch `fix/security-h01-rate-limiting` (2026-11-11; ainda sem commit). Detalhes e evidências na seção 11.
+
+### MEDIUM
+
+#### M-01 — Inflação ilimitada de avaliações por uma única conta
+- **Severidade / confiança:** MEDIUM / CONFIRMED
+- **Local:** `backend/src/controllers/avaliacaoController.js:18-59`; `backend/src/controllers/contratoController.js:148-155` (bloqueia só contrato *ativo* duplicado); índice `{autor, contrato}` em `backend/src/models/Avaliacao.js`.
+- **Descrição:** cada contrato concluído dá direito a uma avaliação, e nada impede o mesmo cliente de contratar o mesmo serviço de novo depois de concluir. Um freelancer com uma conta "laranja" de cliente repete o ciclo criar → aceitar → entregar → confirmar → avaliar 5★ quantas vezes quiser.
+- **Reprodução:** a mesma conta cliente fez 3 ciclos no mesmo serviço e gerou 3 avaliações 5★ (cada etapa respondeu `201,200,200,200,201`). O perfil público passou a mostrar `totalAvaliacoes=3`. Somado a M-03, o número de contas laranja também é ilimitado.
+- **Impacto:** a média e o total de avaliações, usados para ranking (`ordenar=avaliacao`, filtro `avaliacaoMin`), deixam de ser confiáveis.
+- **Correção:** limitar a uma avaliação por par (cliente, serviço), ou ponderar repetições. Exigir valor mínimo ou intervalo entre contratos. Validar o CPF (M-03). Considerar sinais antifraude (mesmo IP ou dispositivo do freelancer).
+- **Reproduzido:** sim.
+
+#### M-02 — Troca de e-mail sem reautenticação e sem invalidar sessões (sequestro/bloqueio de conta)
+- **Severidade / confiança:** MEDIUM / CONFIRMED
+- **Local:** `backend/src/controllers/usuarioController.js:517-530`; `backend/src/utils/validacaoPerfil.js` (campo `email`).
+- **Descrição:** `PUT /api/usuarios/perfil` aceita um novo `email` só com o bearer token, sem pedir a senha atual, sem confirmar o novo endereço e sem incrementar `versaoSessao`.
+- **Reprodução:** com o token da vítima, `PUT /api/usuarios/perfil {"email":"attacker…@evil.local"}` → `200`. Login com o e-mail original → `401`. Login com o novo e-mail e a mesma senha → `200`. O token antigo continua válido → `200`.
+- **Impacto:** quem obtém o token (XSS futuro, máquina compartilhada, extensão maliciosa, M-04) tira a vítima da própria conta. Quando a recuperação de senha por e-mail for ligada, o atacante assume a conta de forma definitiva.
+- **Correção:** exigir a senha atual para trocar o e-mail, confirmar o novo endereço por link, incrementar `versaoSessao` e avisar o e-mail antigo.
+- **Reproduzido:** sim.
+
+#### M-03 — CPF sem dígito verificador, truncado, e enumerável
+- **Severidade / confiança:** MEDIUM / CONFIRMED
+- **Local:** `backend/src/utils/cpfUtils.js:1` (`normalizarCpf` corta em 11 dígitos), `backend/src/utils/cpfUtils.js:41` (`validarCpf` só checa tamanho e repetição); `backend/src/controllers/autenticacaoController.js:52-58` (mensagem 409 específica de CPF).
+- **Descrição:** qualquer sequência de 11 dígitos é aceita, inclusive CPFs inválidos. Entradas mais longas são truncadas em silêncio. O CPF é único no banco.
+- **Reprodução:** `cpf=12345678900` (DV inválido) → `201`. Um CPF de 17 dígitos → `201`. Reusar um CPF existente → `409 "Já existe um usuário cadastrado com este CPF."`. Teste de propriedade: **2000/2000** sequências aleatórias de 11 dígitos aceitas.
+- **Impacto:** (a) contas falsas ilimitadas (alimenta M-01); (b) quem conhece o CPF de uma pessoa pode registrá-lo antes e impedir o cadastro dela; (c) qualquer pessoa descobre se um CPF está cadastrado (dado pessoal, LGPD).
+- **Correção:** validar os dígitos verificadores (a função `calcularDigito` já existe), rejeitar entradas com mais de 11 dígitos em vez de truncar e devolver uma mensagem genérica de conflito no cadastro.
+- **Reproduzido:** sim.
+
+#### M-04 — Sessão de 7 dias em `localStorage`, sem revogação no logout
+- **Severidade / confiança:** MEDIUM / CONFIRMED
+- **Local:** `backend/src/utils/tokenSessao.js:16` (`expiresIn: '7d'`); `frontend/src/services/authService.js:94-102`; `frontend/src/components/catalog/UserMenu.jsx:62-66` (logout só chama `limparSessao()`).
+- **Descrição:** o token fica acessível a qualquer script da origem. O logout não avisa o servidor, embora já exista o mecanismo `versaoSessao` para revogar.
+- **Reprodução:** o token emitido pelo login real tem `exp - iat = 604800 s`. O "Sair" da UI não gera requisição à API, então um token copiado continua valendo 7 dias.
+- **Impacto:** amplia qualquer vazamento de token. Combinado com M-02, permite tomar a conta.
+- **Correção:** criar `POST /api/autenticacao/logout` que incremente `versaoSessao` (ou uma lista de revogação). Reduzir a validade com refresh token. Preferir cookie `HttpOnly; Secure; SameSite` (com proteção CSRF) a `localStorage`.
+- **Reproduzido:** sim (validade e comportamento do logout).
+
+#### M-05 — Campos de texto sem limite de tamanho (contratos e avaliações públicas)
+- **Severidade / confiança:** MEDIUM / CONFIRMED
+- **Local:** `backend/src/controllers/contratoController.js:106-110` (`mensagem`, `detalhesPedido`, `prazoDesejado`, `referencias`); `backend/src/controllers/avaliacaoController.js:58` (`comentario`); schemas sem `maxlength` em `Contrato.js` e `Avaliacao.js`. Também `nome`, `descricao` e `extra` do serviço.
+- **Descrição:** o único limite é o de 1 MB do `express.json`.
+- **Reprodução:** um contrato com `detalhesPedido` de 900.000 caracteres → `201`, armazenado inteiro. Uma avaliação com `comentario` de 200.000 caracteres → `201`.
+- **Impacto:** crescimento descontrolado do banco. Respostas públicas e sem autenticação (`GET /api/avaliacoes/servico/:id`, `GET /api/usuarios/publico/:id`) ficam enormes, o que amplifica o consumo de banda e CPU (OWASP API4).
+- **Correção:** adicionar `maxlength` nos schemas e validação nos controllers (por exemplo, 2000 caracteres para textos livres e 1000 para o comentário).
+- **Reproduzido:** sim.
+
+#### M-06 — Dependências com avisos HIGH, uma delas alcançável
+- **Severidade / confiança:** MEDIUM / LIKELY (body-parser); POTENTIAL (mongoose); LOW (multer, vite)
+- **Local:** `backend/package-lock.json`, `frontend/package-lock.json`.
+- **Saída do `npm audit`:**
+  - backend: `body-parser 2.0.0–2.3.0` (GHSA-27r3-jxmh-p828, DoS com bytes após um corpo comprimido); `mongoose 8.24.5` (GHSA-gg4r-jv3p-qx3c, -wr5m-5jph-8m96, -8332-j7wj-wjw4, -6972-9mcm-vhwj); `multer 2.4.0` (GHSA-q7qp-rjg7-q26m).
+  - frontend: `vite 8.0.16` (GHSA-9jrq-w75r-8gcw, -rq7h-c2jc-7f22 e avisos do `launch-editor`).
+- **Alcance:**
+  - body-parser: corpos gzip são aceitos (`Content-Encoding: gzip` → `201` em `/api/favoritos`), então o caminho vulnerável é alcançável. Não reproduzi o DoS em si.
+  - mongoose: o projeto não usa `sanitizeFilter` nem discriminators. Os corpos de requisição passam por validadores antes de `set`/`findByIdAndUpdate` (tentativa de mass assignment bloqueada, ver FP-05). Alcance não demonstrado.
+  - multer: o aviso exige um `fileFilter` assíncrono pendente; o deste projeto é síncrono. Provavelmente não explorável.
+  - vite: afeta só o servidor de desenvolvimento.
+- **Correção:** `npm audit fix` / atualizar `express` (que puxa o body-parser), `mongoose` ≥ 8.24.7, `multer` ≥ 2.4.1 e `vite` ≥ 8.1.6. Rodar a suíte de novo depois.
+- **Reproduzido:** só o alcance (gzip aceito). Os exploits dos avisos não foram executados.
+
+### LOW
+
+#### L-01 — Um 401 atrasado de sessão antiga apaga um login novo (`authService`)
+- **Confiança:** CONFIRMED. **Local:** `frontend/src/services/authService.js:113-115`.
+- `buscarUsuarioAtual` chama `limparSessao()` em todo 401 e ignora a proteção do `apiClient.js:23`, que compara o token. Se o usuário fizer login enquanto um `GET /api/usuarios/perfil` com token antigo ainda está em andamento, a resposta 401 atrasada apaga o login novo.
+- **Reprodução:** teste isolado `authRace.test.mjs` (no scratchpad da auditoria). O controle com `apiRequest` passou e preservou `new-login`. O caso com `buscarUsuarioAtual(true)` falhou com `actual: undefined, expected: 'new-login'`.
+- **Correção:** remover o `if (error.status === 401) limparSessao();` e deixar o `apiClient` como único responsável por encerrar a sessão.
+
+#### L-02 — Corpo ausente gera 500 em 5 endpoints
+- **Confiança:** CONFIRMED. **Local:** `contratoController.js:106` (`req.body.servicoId`), `mensagemController.js` (`enviar`, `req.body.contratoId`), `avaliacaoController.js:21`, `favoritoController.js` (`criar`), `notificacaoController.js:130`.
+- No Express 5, `req.body` é `undefined` quando não há corpo, e a desestruturação lança exceção. Testado sem corpo: `contratos=500 mensagens=500 avaliacoes=500 favoritos=500 contexto=500`.
+- **Correção:** `const corpo = req.body || {}` (como `excluirPerfil` já faz) e responder 400.
+
+#### L-03 — Validação de preço do serviço inconsistente
+- **Confiança:** CONFIRMED. **Local:** `backend/src/services/servicoService.js:465-467` e `:516-519`; schema `Servico.preco` com `min: 0.01`.
+- `preco=0.001` passa no controller e falha no schema, gerando `500`. `preco=1e300` → `201`. `preco=10.999` → `201`. Já o contrato a combinar limita o valor a 1.000.000 com 2 casas (`acordoContrato.js` `validarValor`), mas o preço fixo é copiado do serviço sem esse limite.
+- **Correção:** reutilizar `validarValor` na criação e edição do serviço.
+
+#### L-04 — Cabeçalho `Host` refletido em URLs absolutas; protocolo errado atrás de TLS
+- **Confiança:** CONFIRMED. **Local:** `backend/src/utils/mapeadoresResposta.js:3-7`, `mensagemController.js` (`mapMensagem`), `usuarioController.js:650`.
+- `curl -H "Host: evil.example" /api/servicos?limit=1` → `imagemServico=http://evil.example/uploads/...`. Sem `trust proxy`, `req.protocol` é sempre `http`, o que gera conteúdo misto atrás de HTTPS.
+- **Impacto:** envenenamento de cache, se houver CDN ou cache intermediário, e imagens quebradas sob HTTPS.
+- **Correção:** devolver caminhos relativos ou uma URL base configurada (`PUBLIC_BASE_URL`).
+
+#### L-05 — Cabeçalhos de segurança ausentes (API e SPA)
+- **Confiança:** CONFIRMED (API), código (nginx). **Local:** `backend/src/app.js` (sem helmet), `frontend/deploy/nginx.docker.conf`.
+- A API responde com `X-Powered-By: Express` e sem `X-Content-Type-Options`, `X-Frame-Options`/`frame-ancestors`, CSP ou HSTS. O nginx do SPA também não define CSP nem proteção contra clickjacking.
+- **Correção:** `helmet()` na API, `app.disable('x-powered-by')` e cabeçalhos `add_header` no nginx (CSP restritiva, `frame-ancestors 'none'`, HSTS quando houver TLS).
+
+#### L-06 — Path traversal do lado do cliente nos serviços do frontend
+- **Confiança:** CONFIRMED (manipulação do caminho); impacto destrutivo NÃO demonstrado. **Local:** `frontend/src/services/catalogService.js:146,154,157,162,167`, `contractService.js:16`, `messageService.js:29`, `serviceEditorService.js:18`.
+- Os ids vindos da URL (`?id=`) são interpolados sem `encodeURIComponent`. `/detalhe-servico?id=../../etc/passwd` faz o navegador normalizar a requisição para fora de `/api/servicos/`. O SPA recebe o `index.html` e mostra um serviço "fantasma" ("Serviço sem título / Freelancer Workly") em vez de um erro. Também testei o encadeamento até `DELETE /api/servicos/:id` pelo botão "Salvar" e ele **não** funcionou: virou `POST /api/favoritos` com corpo inválido.
+- **Impacto:** um link malicioso faz o navegador da vítima disparar GETs autenticados para outros endpoints. Hoje o efeito colateral é limitado (por exemplo, marcar mensagens como lidas).
+- **Correção:** `encodeURIComponent(id)` em todos os caminhos (como `notificationService.js:30` já faz) e validar `^[a-f0-9]{24}$` antes da requisição.
+
+#### L-07 — Enumeração de contas por e-mail e diferença de tempo no login
+- **Confiança:** CONFIRMED (cadastro); POTENTIAL (tempo). **Local:** `autenticacaoController.js:57` (409 específico de e-mail), `:100-101` (o `bcrypt.compare` só roda se o usuário existir).
+- O comentário do login promete não revelar se a conta existe, mas o cadastro revela, e o tempo de resposta também tende a revelar.
+- **Correção:** mensagem genérica no cadastro e `bcrypt.compare` contra um hash fictício quando o usuário não existir.
+
+#### L-08 — Verificação de senha atual sem limite de tentativas (troca de senha e exclusão de conta)
+- **Confiança:** CONFIRMED pelo código (não exercitado em volume). **Local:** `usuarioController.js:660-689`, `contaService.js:138-152`; nenhum limitador em `/api/usuarios/perfil/senha` nem em `DELETE /api/usuarios/perfil`.
+- Quem tem o token pode testar senhas sem limite. **Correção:** rate limit por usuário nessas rotas.
+
+#### L-09 — 401 para "Senha atual incorreta" contraria a regra do próprio projeto
+- **Confiança:** CONFIRMED pelo código. **Local:** `usuarioController.js:689` versus `contaService.js:151`.
+- Hoje não derruba a sessão, porque a rota é `/perfil/senha` e a mensagem não contém "token". Mas qualquer mudança no texto ou na rota passaria a deslogar o usuário. **Correção:** responder 403, como a exclusão de conta faz, e ajustar `frontend/test/release.test.js:40`.
+
+#### L-10 — O frontend decide o fim da sessão pelo texto da mensagem
+- **Confiança:** CONFIRMED pelo código. **Local:** `frontend/src/services/apiClient.js:19-22` + o comentário em `autenticacaoMiddleware.js:8`.
+- `/token/i.test(message)` acopla o encerramento da sessão ao texto. Se uma mensagem do middleware mudar, sessões expiradas deixam de ser limpas sem ninguém perceber. **Correção:** um campo estruturado (`codigo: 'SESSAO_INVALIDA'`).
+
+#### L-11 — `referencias` do contrato renderizada como link sem validação
+- **Confiança:** CONFIRMED. **Local:** `frontend/src/components/messages/ContractDetails.jsx:47-56`; `contratoController.js:110`.
+- O cliente grava qualquer texto e ele vira `href` no modal do freelancer. `javascript:` é bloqueado pelo React 19 (ver FP-02), mas URLs de phishing são exibidas como links clicáveis. **Correção:** validar como http(s) (reusar `urlValida`) ou exibir como texto.
+
+#### L-12 — Paginação de notificações aceita valores inválidos
+- **Confiança:** CONFIRMED. **Local:** `notificacaoController.js:57-58,70`.
+- `limit=-3` → resposta com `limit=-3` e `totalPages=-3`. `page=abc` → `200` sem erro de validação. **Correção:** reutilizar a lógica de `obterPaginacao` de `servicoService.js`.
+
+#### L-13 — Listagens sem paginação nem limite
+- **Confiança:** CONFIRMED pelo código; com o volume demo (100 usuários, 220 contratos) os tempos foram baixos (`/api/usuarios/perfil` 35 ms, `?ordenar=avaliacao` 39 ms).
+- **Local:** `contratoController.meus`, `mensagemController.listarPorContrato`, `avaliacaoController.minhas/porServico`, `usuarioController.buscarPerfil` (avaliações recebidas e dashboard com `populate` profundo de todos os contratos), `favoritoController.listar`, `servicoService.montarFiltro` (carrega todos os ids de freelancers para `$in`).
+- **Impacto:** a memória e a latência crescem sem limite com o volume de dados. **Correção:** paginação e projeções.
+
+#### L-14 — Condição de corrida (TOCTOU) entre mudança de tipo de conta e publicação de serviço
+- **Confiança:** POTENTIAL. **Local:** `usuarioController.js:595-615` (conta e depois salva) versus `servicoController.js:52-53`.
+- Um freelancer que publica um serviço e muda para "Contratante" ao mesmo tempo pode terminar como contratante com anúncio publicado. Não reproduzi. **Correção:** usar uma marca de transição, como na exclusão de conta, ou gravação condicional.
+
+#### L-15 — Dados de demonstração com senha fixa, sem trava de produção
+- **Confiança:** CONFIRMED pelo código. **Local:** `backend/src/seed.js:16` (`SENHA_DEMO = '12345678'`), `server.js:38-41`.
+- Com `AUTO_SEED=true`, 100 contas com senha conhecida são criadas e a senha é impressa no log, mesmo com `NODE_ENV=production`. O padrão é `false` e o Compose força `false`. **Correção:** recusar o seed quando `NODE_ENV=production`.
+
+### INFORMATIONAL
+
+- **I-01 — Testes de integração pulam sem MongoDB.** `backend/test/helpers/apiTeste.js:26` retorna `null` e os testes viram "skip", a menos que `WORKLY_EXIGIR_MONGO=1`. Sem `JWT_SECRET` no ambiente, vários arquivos falham ao carregar `config/ambiente.js`. Em um `npm test` local sem esses pré-requisitos, o resultado não reflete a cobertura real. O CI define os dois.
+- **I-02 — CORS padrão `*`.** `config/ambiente.js:21`: sem `FRONTEND_URL`, qualquer origem é aceita. Como a autenticação é por bearer (não cookie), o risco é baixo; o Compose define a variável.
+- **I-03 — Efeitos colaterais em GET.** `GET /api/mensagens/contrato/:id` marca mensagens como lidas e `GET /api/usuarios/perfil` regrava `avaliacaoMedia`. Combinado com L-06, um link pode causar "leituras" indesejadas.
+- **I-04 — `favicon.ico` 404** no dev server (único erro de console na home).
+- **I-05 — Campos de perfil sem uso na UI.** `site`, `linkedin`, `github`, `instagram` e `portfolioUrl` são gravados (`site` sem esquema fica cru, por exemplo `evil.com/path`), mas nenhuma página os renderiza como link hoje. Validar esses campos antes de passar a exibi-los.
+
+---
+
+## 5. Funcionalidades e fluxos testados
+
+| Fluxo | Como | Resultado |
+|---|---|---|
+| Cadastro (CPF inválido/truncado, duplicado) | API | M-03 |
+| Login, rate limit, XFF, IPv4/IPv6 | API + navegador via proxy | H-01 |
+| JWT `alg=none`, token forjado no `localStorage` | API + navegador | bloqueado (FP-07) |
+| Rotas protegidas sem sessão (`/perfil`, `/anuncio`, `/contratos`, `/mensagens`, `/contratar-servico`, `/favoritos`) | navegador | todas redirecionam para `/login` |
+| Sessão expirada/forjada → limpeza do token | navegador | token removido, redireciona |
+| Corrida de 401 atrasado no frontend | teste isolado | L-01 |
+| Contrato preço fixo: criar → aceitar → entregar → confirmar → avaliar | API | funciona; M-01 |
+| Avaliação repetida por contratos sucessivos | API | M-01 |
+| IDOR: outsider lê/envia mensagens, cancela contrato, edita/apaga serviço; freelancer confirma a própria entrega | API | todos 403 (FP-04) |
+| Injeção de operadores Mongo (login, reset, filtro de busca, `referenciaId`) | API | bloqueado (FP-03) |
+| Mass assignment no perfil (`tipoConta`, `avaliacaoMedia`, `removido`, `versaoSessao`) | API | ignorado (FP-05) |
+| Troca de e-mail sem senha | API | M-02 |
+| Upload poliglota PNG+HTML, SVG disfarçado | API | seguro (FP-06) |
+| Traversal em `/uploads` (4 variações) | API | 404 (FP-08) |
+| Gzip bomb de 50 MB | API | 413 em 7 ms (FP-10) |
+| 20 favoritos concorrentes | API | 20×201, sem duplicata nem 500 (FP-11) |
+| Corpo ausente em 5 POST/PATCH | API | L-02 |
+| Paginação inválida | API | L-12 |
+| Falha de rede na página de contratos | navegador (rota abortada) | mensagem "Erro ao carregar / Failed to fetch" exibida |
+| `id` inválido e path traversal em `/detalhe-servico` | navegador | L-06 |
+| `javascript:` em Referências do contrato | navegador | bloqueado pelo React (FP-02); L-11 |
+| Host header | curl | L-04 |
+
+## 6. Testes executados e resultados reais
+
+| Suíte | Comando | Resultado |
+|---|---|---|
+| Backend (MongoDB real em `127.0.0.1:27017`; ver nota sobre o ambiente abaixo) | `JWT_SECRET=<aleatório> WORKLY_EXIGIR_MONGO=1 npm test` | **116 testes: 114 pass, 0 fail, 2 skipped** (ida e volta de backup exige `mongodump`/`mongorestore`, ausentes) |
+| Frontend | `npm test` | **61 testes: 61 pass, 0 fail** |
+| Sondagem adversarial da API (`probe.mjs`) | 17 verificações | resultados nos achados acima |
+| Sondagem 2 (`probe2.mjs`) | upload, traversal, gzip, concorrência, tempos | resultados nos achados e falsos positivos |
+| Reprodução do bug de sessão (`authRace.test.mjs`) | `node --test` | 1 pass (controle), **1 fail (bug confirmado)** |
+| Testes de propriedade (`props.test.cjs`, fast-check 3.23.2, 5000 execuções) | `node --test` | 6 pass. Validadores de valor, URL, limite configurável e política de senha aprovados. CPF aceita 2000/2000 sequências aleatórias (M-03) |
+| Navegador (Playwright CLI 0.1.22, Chromium) | `browser.js`, `svc.js`, `cspt.js` | resultados na seção 5 |
+
+**Nota sobre o ambiente (corrigida depois):** a intenção era usar um MongoDB 8.0.4 descartável (`mongodb-memory-server`) na porta 27017. A máquina, porém, tem um serviço Windows `MongoDB` 9.0.4 com início automático na mesma porta, e o Windows aceitou os dois binds. Por isso, parte do tráfego (pelo menos a sondagem da fase 1, que deixou o banco `workly_audit` nesse serviço) foi para o MongoDB local do desenvolvedor. Os resultados continuam válidos, porque foram obtidos contra um MongoDB real, mas não dá para garantir qual das duas instâncias atendeu cada execução local. O banco `workly` do serviço não foi alterado (0 usuários de teste ou sondagem). A execução isolada e reproduzível é a do perfil de testes do CI no Docker (seção 11).
+
+Observação: na primeira execução do backend, sem `JWT_SECRET`, vários arquivos falharam ao carregar a configuração. O `exit 0` mostrado naquela vez veio do `tail` no pipe, não do npm. O resultado válido é o da tabela.
+
+Os scripts de auditoria ficaram fora do repositório, em
+`C:\Users\vitor\AppData\Local\Temp\claude\C--Users-vitor-Downloads-workly-workly-pi\5aad280d-40da-4c07-a617-49fe89de9570\scratchpad\`.
+
+## 7. Ferramentas de segurança executadas
+
+- `npm audit` (backend e frontend): M-06.
+- Revisão manual de código de todas as rotas, controllers, serviços, middlewares, modelos e dos serviços do frontend.
+- Playwright CLI para testes no navegador real.
+- fast-check para testes de propriedade.
+- curl para manipulação de cabeçalhos.
+- **Não executados:** Semgrep e CodeQL (não instalados nesta máquina) e mutation testing (as ferramentas mewt/muton do plugin não atendem JavaScript).
+
+## 8. Áreas não testadas e motivos
+
+- **Deploy Docker/nginx real:** o daemon do Docker não estava rodando. H-01 foi reproduzido com o proxy do Vite, que tem a mesma topologia, e a configuração do nginx foi verificada no código.
+- **Backup/restore com `mongodump`:** Database Tools ausentes; 2 testes pulados.
+- **Recuperação de senha por e-mail:** não há provedor; testei só o canal de console de desenvolvimento e a resistência a injeção no token.
+- **Testes de carga e DoS volumétrico:** não executados, por decisão de não estressar o ambiente. Os tempos foram medidos só no volume demo.
+- **Exploits dos avisos das dependências (M-06):** só o alcance foi verificado.
+- **Layout responsivo e acessibilidade:** fora do foco desta rodada.
+- **Navegação voltar/avançar e refresh durante operações:** coberta apenas parcialmente (redirecionamentos e falha de rede).
+
+## 9. Falsos positivos investigados
+
+| ID | Hipótese | Conclusão |
+|---|---|---|
+| FP-01 | XSS via SweetAlert2 (`title` e `html` são HTML) | Todos os `title` são literais; o único `html` é estático (`ProfileSettings.jsx:251`). |
+| FP-02 | XSS por `href={c.referencias}` com `javascript:` | O React 19 substitui por `javascript:throw new Error('React has blocked…')`; o clique abriu `about:blank`. Restou L-11. |
+| FP-03 | Injeção NoSQL (login, reset, busca, `referenciaId`) | `String()` / `idMongoValido` / regex escapada. Login `{$ne}` → 401, reset `{$gt}` → 400, contexto → 400. |
+| FP-04 | IDOR em contratos, mensagens e serviços | Cinco tentativas de terceiros → 403. O freelancer não confirma a própria entrega (403). |
+| FP-05 | Mass assignment no perfil | `validarAtualizacaoPerfil` usa lista de campos permitidos; `tipoConta`, `avaliacaoMedia`, `removido` e `versaoSessao` foram ignorados. |
+| FP-06 | Upload malicioso (poliglota, SVG) | Validação por bytes mágicos; SVG → 400; poliglota servido como `image/png` com `nosniff` e CSP `sandbox`. |
+| FP-07 | JWT `alg=none` ou token forjado | Algoritmo fixado em HS256 → 401; o frontend limpa o token e redireciona. |
+| FP-08 | Traversal em `/uploads` | Quatro variações → 404 (filtro de extensão + `express.static` + `dotfiles: deny`). |
+| FP-09 | Exclusão arbitrária de arquivo em `removerArquivoSeExistir` | Os caminhos são sempre gerados pelo servidor (nome do multer ou valor gravado pelo próprio servidor); não há entrada do usuário. |
+| FP-10 | Gzip bomb | 50 MB descomprimidos → 413 em 7 ms. |
+| FP-11 | Corrida em favoritos | 20 POSTs simultâneos → 20×201, um único documento. |
+| FP-12 | Corridas em transições de contrato e pedidos duplicados | Gravações condicionais e índice único parcial; os testes de concorrência do projeto passaram contra o Mongo real. |
+| FP-13 | ReDoS na busca | `escaparRegex` aplicado; busca de 8000 caracteres respondeu em 9 ms. |
+| FP-14 | DoS do multer (GHSA-q7qp) | Exige `fileFilter` assíncrono; o deste projeto é síncrono. |
+
+## 10. Avaliação geral de risco
+
+**Risco geral: MÉDIO.** O núcleo de segurança está acima da média para um projeto deste porte: autorização por recurso consistente, defesa contra injeção, uploads robustos e um cuidado incomum com concorrência e exclusão de conta. Mesmo assim, **o projeto não deve ir para produção com H-01 aberto**, porque a autenticação pode ser derrubada por qualquer pessoa sem credenciais. Logo depois vêm a integridade das avaliações (M-01 + M-03) e o endurecimento de sessão (M-02 + M-04), que juntos permitem fraude de reputação e tomada de conta a partir de um token vazado.
+
+**Ordem de correção sugerida:**
+1. H-01: `trust proxy`, limitadores separados e chave por conta.
+2. M-03 e M-01: dígito verificador do CPF; uma avaliação por cliente e serviço.
+3. M-02 e M-04: reautenticação na troca de e-mail, logout no servidor, validade menor.
+4. M-05 e M-06: limites de tamanho; atualizar dependências.
+5. LOW, começando por L-01 (o bug relatado no `apiClient`/`authService`), L-02 e L-06.
+
+Na auditoria inicial, nenhuma correção foi implementada. As correções autorizadas depois estão registradas na seção 11.
+
+---
+
+## 11. Registro de correções
+
+### H-01 — CORRIGIDO (branch `fix/security-h01-rate-limiting`, sem commit)
+
+**Causa raiz:** (1) uma única instância de `express-rate-limit` montada em `/login`, `/cadastro` e `/register`; (2) sem `trust proxy`, `req.ip` era o endereço do nginx para todos os clientes; (3) o nginx não informava o IP do cliente.
+
+**Alterações:**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/utils/ipCliente.js` (novo) | `lerConfiancaProxy`: lê `TRUST_PROXY` como lista de endereços, sub-redes ou presets; vazio significa nenhum proxy; `true` e contagem de saltos são recusados com erro na inicialização. `chaveIpCliente`: normaliza a chave (IPv4 mapeado → IPv4; IPv6 → prefixo /64). |
+| `backend/src/config/ambiente.js` | expõe `trustProxy`. |
+| `backend/src/app.js` | `app.set('trust proxy', ambiente.trustProxy)`; `limitadorLogin` (10 falhas por cliente em 15 min, `skipSuccessfulRequests`) e `limitadorCadastro` separado (10 por cliente em 15 min; `/cadastro` e o alias `/register` dividem o mesmo contador); os dois usam `chaveIpCliente`. |
+| `frontend/deploy/nginx.docker.conf`, `frontend/deploy/nginx.conf.example` | `/api/`: `proxy_set_header X-Forwarded-For $remote_addr` (sobrescreve, descartando o valor do cliente) e `X-Real-IP`. O exemplo documenta `TRUST_PROXY` e o uso de `realip` se houver outro proxy na frente. |
+| `docker-compose.yml` | `TRUST_PROXY: uniquelocal` no backend (a API não publica porta; só containers da rede do compose a alcançam). |
+| `backend/.env.example` | documenta `TRUST_PROXY` (padrão vazio = acesso direto seguro). |
+| `backend/test/limiteAutenticacao.test.js` (novo) | 12 testes de regressão. |
+
+**Evidências:**
+
+| Verificação | Antes | Depois |
+|---|---|---|
+| Testes novos contra o `app.js` original | — | 8 de 12 falham (a regressão é detectada) |
+| Testes novos com a correção (Mongo real) | — | 12/12 pass |
+| Suíte backend local (MongoDB real em 127.0.0.1:27017, ver nota da seção 6; `WORKLY_EXIGIR_MONGO=1`) | 116: 114 pass, 2 skip | 128: 126 pass, 0 fail, 2 skip (os mesmos, falta `mongodump` no Windows) |
+| Suíte frontend | 61/61 | 61/61 |
+| Perfil de testes do CI no Docker (`backend-test`, com `mongodump`) | não executado na auditoria | 128/128 pass, 0 skip |
+| Perfil de testes do CI no Docker (`frontend-test`) | não executado na auditoria | 61/61 pass |
+| Docker real: cliente A (172.19.0.5) faz 11 logins errados via nginx | todos dividiam um balde | `401×10, 429` |
+| Docker real: cliente B (172.19.0.6), mesmo nginx | bloqueado junto | `401` (independente) |
+| Docker real: A forja `X-Forwarded-For` rotativo | XFF ignorado, balde global | `429×5` (o nginx sobrescreve; não há como escapar) |
+| Docker real: host envia `X-Forwarded-For: 172.19.0.5` (IP de A) | — | `401`: o valor forjado não herda nem contorna o bloqueio de A |
+| Docker real: A tenta cadastro depois de bloqueado no login | `429` | `400` (contador próprio) |
+| `scripts/smoke-docker.mjs` contra a stack | — | aprovado |
+| Logs do backend | — | nenhum erro de validação do `express-rate-limit` |
+
+**Limitações restantes:**
+
+1. **Fronteira de confiança no Docker:** `uniquelocal` confia em qualquer container da rede do compose. Um container dessa rede que fale direto com `backend:3000` escolhe o IP informado (verificado: `401,401,401` com XFF forjado). Hoje essa rede só tem os serviços do projeto e a API não publica porta. Quem adicionar serviços à rede deve trocar para o IP fixo do nginx.
+2. **Proxy na frente do nginx:** o compose publica o nginx só em `127.0.0.1`. Se um proxy, TLS ou CDN do host ficar na frente dele, o nginx passa a ver só esse proxy e o problema volta, a menos que se configure `ngx_http_realip_module` para ele (documentado em `nginx.conf.example`).
+3. **Desenvolvimento (Vite):** o proxy do Vite não envia `X-Forwarded-For` e o padrão é não confiar em proxy, então em `npm run dev` todos os acessos locais dividem o balde de `127.0.0.1`. É seguro (nada é falsificável) e afeta só o desenvolvimento local.
+4. **Estado em memória:** os contadores ficam no `MemoryStore` do processo. Com mais de uma instância da API, cada uma conta separado, e reiniciar a API zera os contadores. Hoje o compose roda uma instância; para escalar, usar um store compartilhado (Redis ou Mongo).
+5. **Força bruta distribuída:** o limite é por cliente (IP ou /64). Um atacante com muitos IPs ainda tenta senhas em paralelo contra uma conta. Um limite adicional por conta ficou de fora de propósito, porque cria um vetor de bloqueio da vítima e merece decisão própria.
+6. **Mudança de comportamento intencional:** logins bem-sucedidos não contam mais no limite de login (antes contavam). Falhas continuam bloqueando, inclusive a senha certa, enquanto a janela durar.

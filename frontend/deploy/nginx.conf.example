@@ -1,5 +1,8 @@
 # Example only: no production hosting provider is configured in this repository.
 # Replace API_UPSTREAM with the deployment's API origin and set the document root.
+# The API must list this nginx's address in TRUST_PROXY (backend/.env.example) to see client IPs.
+# If another proxy or CDN sits in front of nginx, configure ngx_http_realip_module for it first,
+# so $remote_addr is the real client and not that proxy.
 server {
     listen 80;
     root /srv/workly/dist;
@@ -8,6 +11,9 @@ server {
         proxy_pass API_UPSTREAM;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # overwrite, never append: a client-supplied X-Forwarded-For must not reach the API.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
     }
     location /uploads/ {
         proxy_pass API_UPSTREAM;

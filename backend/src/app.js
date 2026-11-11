@@ -13,17 +13,36 @@ const rotasNotificacao = require('./routes/notificacaoRoutes');
 const rotasMensagem = require('./routes/mensagemRoutes');
 const { erro } = require('./utils/apiResponse');
 const { lerLimitePositivo } = require('./utils/limiteConfiguravel');
+const { chaveIpCliente } = require('./utils/ipCliente');
 
 const app = express();
 
-// limita tentativas de login: no máximo 10 por ip em 15 minutos
+// req.ip só usa X-Forwarded-For quando a conexão vem de um proxy listado em TRUST_PROXY.
+// Atrás do nginx, cada cliente tem o próprio IP; em acesso direto o cabeçalho é ignorado.
+app.set('trust proxy', ambiente.trustProxy);
+
+// login e cadastro têm contadores próprios: um não esgota o outro.
+// login: 10 tentativas com falha por cliente em 15 minutos (entradas bem-sucedidas não contam).
 const limitadorLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => chaveIpCliente(req.ip),
+  handler: (_req, res) =>
+    erro(res, 429, 'Muitas tentativas de login. Tente novamente em 15 minutos.')
+});
+
+// cadastro: 10 pedidos por cliente em 15 minutos, com ou sem sucesso.
+const limitadorCadastro = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => chaveIpCliente(req.ip),
   handler: (_req, res) =>
-    erro(res, 429, 'Muitas tentativas de login. Tente novamente em 15 minutos.')
+    erro(res, 429, 'Muitas tentativas de cadastro. Tente novamente em 15 minutos.')
 });
 
 // recuperação de senha: limite por IP nas duas rotas e, na solicitação, também por e-mail informado
@@ -74,12 +93,12 @@ app.use(
   })
 );
 
-// rate limit cobre login e cadastro
+// rate limit cobre login e cadastro (o alias /register divide o contador do cadastro)
 app.use('/api/autenticacao/login', limitadorLogin);
 
-app.use('/api/autenticacao/cadastro', limitadorLogin);
+app.use('/api/autenticacao/cadastro', limitadorCadastro);
 
-app.use('/api/autenticacao/register', limitadorLogin);
+app.use('/api/autenticacao/register', limitadorCadastro);
 
 // o limite por e-mail lê o corpo, por isso fica depois do express.json acima.
 app.use('/api/autenticacao/recuperar-senha', limitadorRecuperacaoIp, limitadorRecuperacaoEmail);
