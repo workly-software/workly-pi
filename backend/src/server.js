@@ -3,6 +3,7 @@ const connectDatabase = require('./config/db');
 const ambiente = require('./config/ambiente');
 const { popularBancoDemo } = require('./seed');
 const { garantirIndicesContrato, relatarProblemaIndice } = require('./models/Contrato');
+const { garantirIndicesAvaliacao } = require('./models/Avaliacao');
 const { recuperarExclusoesPendentes } = require('./services/contaService');
 
 const INTERVALO_RECUPERACAO_MS = 10 * 60 * 1000;
@@ -25,6 +26,9 @@ async function prepararIndices() {
   const resultado = await garantirIndicesContrato();
   if (resultado.instalado) console.log('Proteção contra contratos duplicados ativa.');
   else relatarProblemaIndice(resultado);
+  // sem o índice de avaliações, novas avaliações respondem 503 até a instalação dar certo.
+  if (await garantirIndicesAvaliacao()) console.log('Proteção contra avaliações repetidas ativa.');
+  else console.error('ATENÇÃO: índice único de avaliações indisponível; novas avaliações ficarão bloqueadas.');
 }
 
 // ponto de partida do backend: conecta no mongo, prepara os dados demo se estiver ligado e sobe a api

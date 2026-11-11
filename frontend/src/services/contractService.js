@@ -102,14 +102,24 @@ export function contractPrice(c) {
     ];
   return ['fa-money-bill-wave', formatCurrency(c.preco || 0)];
 }
+// one review per client and service: hiring the same service again does not open another review.
+const serviceReviewed = (c) => Boolean(c.servicoJaAvaliado || c.servico_ja_avaliado);
 export function canReview(c) {
-  return c.papel === 'cliente' && c.status === 'concluido' && !c.jaAvaliado && !c.ja_avaliado;
+  return (
+    c.papel === 'cliente' &&
+    c.status === 'concluido' &&
+    !c.jaAvaliado &&
+    !c.ja_avaliado &&
+    !serviceReviewed(c)
+  );
 }
 export function contractFeedback(c) {
   // the negotiation panel explains whose turn it is.
   if (negotiationOpen(c)) return null;
   if (c.papel === 'cliente' && (c.status === 'encerrado' || c.jaAvaliado || c.ja_avaliado))
     return ['fa-circle-check', 'Avaliação enviada. Contrato encerrado.', true];
+  if (c.papel === 'cliente' && c.status === 'concluido' && serviceReviewed(c))
+    return ['fa-circle-check', 'Contrato concluído. Você já avaliou este serviço em outra contratação.', true];
   if (c.papel === 'freelancer' && c.status === 'encerrado')
     return ['fa-circle-check', 'Serviço avaliado pelo contratante.', true];
   if (c.status === 'entregue')

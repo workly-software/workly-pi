@@ -218,21 +218,31 @@ exports.meus = async (req, res) => {
     ).lean();
     const avaliacoes = await Avaliacao.find({
       autor: userId,
-      contrato: { $in: contratos.map((c) => c._id) }
+      $or: [
+        { contrato: { $in: contratos.map((c) => c._id) } },
+        { servico: { $in: contratos.map((c) => c.servico?._id || c.servico).filter(Boolean) } }
+      ]
     })
-      .select('contrato')
+      .select('contrato servico')
       .lean();
 
     const contratosAvaliados = new Set(avaliacoes.map((a) => String(a.contrato)));
+    // o cliente avalia cada serviço uma vez: um novo contrato do mesmo serviço não abre outra avaliação.
+    const servicosAvaliados = new Set(avaliacoes.map((a) => String(a.servico)));
     return sucesso(
       res,
       200,
       'Contratos carregados com sucesso.',
-      contratos.map((c) => ({
-        ...mapContrato(req, c, userId),
-        jaAvaliado: contratosAvaliados.has(String(c._id)),
-        ja_avaliado: contratosAvaliados.has(String(c._id))
-      }))
+      contratos.map((c) => {
+        const servicoJaAvaliado = servicosAvaliados.has(String(c.servico?._id || c.servico));
+        return {
+          ...mapContrato(req, c, userId),
+          jaAvaliado: contratosAvaliados.has(String(c._id)),
+          ja_avaliado: contratosAvaliados.has(String(c._id)),
+          servicoJaAvaliado,
+          servico_ja_avaliado: servicoJaAvaliado
+        };
+      })
     );
   } catch (error) {
     console.error(error);

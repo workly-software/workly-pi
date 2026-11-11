@@ -6,6 +6,9 @@ const { mapAvaliacao } = require('../utils/mapeadoresResposta');
 const { notificarAvaliacaoRecebida } = require('../utils/notificacaoUtils');
 const { idMongoValido } = require('../utils/requisicaoUtils');
 
+const MENSAGEM_CONTRATO_AVALIADO = 'Este contrato já foi avaliado.';
+const MENSAGEM_SERVICO_AVALIADO = 'Você já avaliou este serviço em outra contratação.';
+
 async function recalcularFreelancer(freelancerId) {
   const avaliacoes = await Avaliacao.find({ freelancer: freelancerId });
   const total = avaliacoes.length;
@@ -45,8 +48,19 @@ exports.criar = async (req, res) => {
     if (contrato.status !== 'concluido')
       return erro(res, 400, 'Só é possível avaliar contratos concluídos.');
 
-    const jaAvaliado = await Avaliacao.findOne({ autor: userId, contrato: contrato._id });
-    if (jaAvaliado) return erro(res, 400, 'Este contrato já foi avaliado.');
+    // uma avaliação por cliente e serviço: recontratar o mesmo serviço não abre nova avaliação.
+    // a consulta cobre avaliações antigas (fora do índice); o índice único cobre pedidos simultâneos.
+    const jaAvaliado = await Avaliacao.findOne({
+      autor: userId,
+      $or: [{ contrato: contrato._id }, { servico: contrato.servico }]
+    }).select('contrato');
+    if (jaAvaliado) {
+      const mesmoContrato = String(jaAvaliado.contrato) === String(contrato._id);
+      return erro(res, 400, mesmoContrato ? MENSAGEM_CONTRATO_AVALIADO : MENSAGEM_SERVICO_AVALIADO);
+    }
+    if (!(await Avaliacao.protecaoAvaliacoesDisponivel())) {
+      return erro(res, 503, 'Avaliações estão temporariamente indisponíveis. Tente novamente mais tarde.');
+    }
 
     const avaliacaoCriada = await Avaliacao.create({
       autor: userId,
@@ -55,7 +69,8 @@ exports.criar = async (req, res) => {
       servico: contrato.servico,
       notaServico: notaServicoNumerica,
       notaFreelancer: notaFreelancerNumerica,
-      comentario: String(comentario || '').trim()
+      comentario: String(comentario || '').trim(),
+      unicaPorServico: true
     });
 
     // o contrato continua "concluido" após a avaliação; não há segunda gravação de status aqui.
@@ -81,7 +96,10 @@ exports.criar = async (req, res) => {
       mapAvaliacao(req, avaliacao)
     );
   } catch (error) {
-    if (error && error.code === 11000) return erro(res, 400, 'Este contrato já foi avaliado.');
+    // pedidos simultâneos: os índices únicos deixam passar só o primeiro.
+    if (error && error.code === 11000) {
+      return erro(res, 400, error.keyPattern?.servico ? MENSAGEM_SERVICO_AVALIADO : MENSAGEM_CONTRATO_AVALIADO);
+    }
     console.error(error);
     return erro(res, 500, 'Erro ao salvar avaliação.');
   }

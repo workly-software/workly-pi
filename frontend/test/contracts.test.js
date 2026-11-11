@@ -46,6 +46,19 @@ test('review availability, feedback and price aliases match legacy', () => {
     'Serviço avaliado pelo contratante.'
   );
 });
+test('a new contract for an already reviewed service offers no second review (M-01)', () => {
+  const rehired = { papel: 'cliente', status: 'concluido', jaAvaliado: false, servicoJaAvaliado: true };
+  assert.equal(canReview(rehired), false);
+  assert.equal(canReview({ ...rehired, servicoJaAvaliado: undefined, servico_ja_avaliado: true }), false);
+  assert.match(contractFeedback(rehired)[1], /já avaliou este serviço/);
+  // the contract that carries the review keeps its original message.
+  assert.equal(
+    contractFeedback({ ...rehired, jaAvaliado: true })[1],
+    'Avaliação enviada. Contrato encerrado.'
+  );
+  // a first contract of a service not yet reviewed still opens the form.
+  assert.equal(canReview({ ...rehired, servicoJaAvaliado: false }), true);
+});
 test('contract API keeps raw review/proposal field types, POST actions and backend errors', async (t) => {
   const old = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {

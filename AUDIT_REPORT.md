@@ -13,7 +13,7 @@
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 1 (H-01 corrigido; ver seção 11) |
-| MEDIUM | 6 |
+| MEDIUM | 6 (M-01 corrigido; ver seção 11) |
 | LOW | 15 |
 | INFORMATIONAL | 5 |
 | Falsos positivos investigados | 14 |
@@ -96,6 +96,7 @@ arquivos estáticos                                               MongoDB 8 (Mon
 - **Impacto:** a média e o total de avaliações, usados para ranking (`ordenar=avaliacao`, filtro `avaliacaoMin`), deixam de ser confiáveis.
 - **Correção:** limitar a uma avaliação por par (cliente, serviço), ou ponderar repetições. Exigir valor mínimo ou intervalo entre contratos. Validar o CPF (M-03). Considerar sinais antifraude (mesmo IP ou dispositivo do freelancer).
 - **Reproduzido:** sim.
+- **Status: CORRIGIDO** na branch `fix/security-h01-rate-limiting` (2026-11-11; ainda sem commit). Detalhes e evidências na seção 11. A parte que depende de contas falsas continua em M-03.
 
 #### M-02 — Troca de e-mail sem reautenticação e sem invalidar sessões (sequestro/bloqueio de conta)
 - **Severidade / confiança:** MEDIUM / CONFIRMED
@@ -373,3 +374,68 @@ Na auditoria inicial, nenhuma correção foi implementada. As correções autori
 4. **Estado em memória:** os contadores ficam no `MemoryStore` do processo. Com mais de uma instância da API, cada uma conta separado, e reiniciar a API zera os contadores. Hoje o compose roda uma instância; para escalar, usar um store compartilhado (Redis ou Mongo).
 5. **Força bruta distribuída:** o limite é por cliente (IP ou /64). Um atacante com muitos IPs ainda tenta senhas em paralelo contra uma conta. Um limite adicional por conta ficou de fora de propósito, porque cria um vetor de bloqueio da vítima e merece decisão própria.
 6. **Mudança de comportamento intencional:** logins bem-sucedidos não contam mais no limite de login (antes contavam). Falhas continuam bloqueando, inclusive a senha certa, enquanto a janela durar.
+
+### M-01 — CORRIGIDO (branch `fix/security-h01-rate-limiting`, sem commit)
+
+**Causa raiz:** a única restrição era o índice único `{autor, contrato}`: uma avaliação por *contrato*. Como recontratar um serviço concluído cria um contrato novo, o mesmo cliente avaliava o mesmo serviço quantas vezes repetisse o ciclo. Além disso, a checagem era uma consulta antes de gravar, sem proteção contra pedidos simultâneos.
+
+**Regra adotada:** **uma avaliação por cliente e serviço** (`autor` + `servico`).
+- Uma avaliação pertence a um contrato, mas alimenta a nota do serviço (`notaServico`, agregada por serviço) e a do freelancer (`notaFreelancer`). Um freelancer pode ter vários serviços.
+- Recontratar o mesmo serviço continua permitido: o índice de contratos só impede dois contratos *ativos* ao mesmo tempo, e esse fluxo não muda. Só a segunda avaliação do mesmo serviço é recusada.
+- A alternativa `autor + freelancer` foi descartada porque impediria avaliar serviços diferentes do mesmo profissional, que são relações distintas no modelo.
+- **Ambiguidade que permanece:** a regra não permite reavaliar um serviço quando a experiência de uma recontratação for diferente. Se o produto quiser isso, o caminho é permitir *editar* a avaliação existente, não criar outra.
+
+**Alterações:**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/models/Avaliacao.js` | campo `unicaPorServico` (gravado em toda avaliação nova); índice único parcial `avaliacao_unica_por_cliente_servico` em `{autor: 1, servico: 1}` com `partialFilterExpression: {unicaPorServico: true}`; `garantirIndicesAvaliacao()` (instala e confere a definição exata) e `protecaoAvaliacoesDisponivel()`. |
+| `backend/src/controllers/avaliacaoController.js` | a consulta prévia passa a cobrir contrato **ou** serviço (pega avaliações antigas, fora do índice); grava `unicaPorServico: true`; sem índice verificado responde 503 (falha fechada); erro 11000 vira 400 com mensagem por `keyPattern` ("Este contrato já foi avaliado." / "Você já avaliou este serviço em outra contratação."). Autenticação, posse do contrato, status `concluido` e a origem de `freelancer`/`servico` (sempre do contrato, nunca do corpo) foram mantidos. |
+| `backend/src/controllers/contratoController.js` | `GET /api/contratos/meus` acrescenta `servicoJaAvaliado` / `servico_ja_avaliado`; `jaAvaliado` mantém o significado por contrato. |
+| `backend/src/server.js`, `backend/src/scripts/indices.js` | instalam e verificam o índice na inicialização e no script de deploy. |
+| `frontend/src/services/contractService.js` | `canReview` não oferece o formulário quando o serviço já foi avaliado; mensagem própria para esse caso. |
+| `backend/test/avaliacaoUnica.test.js` (novo), `frontend/test/contracts.test.js` | 14 testes de backend e 1 de frontend. |
+
+**Índice:** `avaliacao_unica_por_cliente_servico`, único e parcial. O índice antigo `{autor, contrato}` continua igual.
+
+**Compatibilidade com dados existentes:**
+- Avaliações antigas não têm `unicaPorServico`, ficam fora do índice e **não são apagadas nem alteradas**. Por isso a criação do índice nunca falha por duplicação antiga.
+- Testado com duas avaliações antigas do mesmo cliente para o mesmo serviço: o índice foi instalado, as duas foram preservadas e um terceiro contrato não conseguiu avaliar, porque a consulta prévia enxerga as antigas.
+- Duplicações antigas continuam contando nas médias, como antes; removê-las é decisão de produto.
+
+**Isolamento do banco (exigência desta fase):**
+- Todos os testes locais rodaram contra um container `mongo:8.0` dedicado (`workly-m01-mongo`, `127.0.0.1:27118`, volume anônimo removido no fim).
+- Antes de rodar, conferi que o servidor respondia com hostname igual ao ID do container (`831cb3a2dfad`), versão 8.0.34 (o serviço do host é 9.0.4) e só bancos de sistema.
+- O MongoDB do host não foi acessado nesta fase.
+- A suíte completa rodou pelo perfil de testes do CI no Docker (`-p workly-m01`, rede e banco `db-test` próprios, derrubados com `down --volumes`).
+
+**Testes e resultados:**
+
+| Verificação | Resultado |
+|---|---|
+| Testes novos (14) contra o código **original** | 9 pass, **5 fail**: recontratação, concorrência entre contratos, fluxo completo, médias e índice (vulnerabilidade reproduzida) |
+| Testes novos com a correção | **14/14 pass** |
+| Concorrência: 24 pedidos simultâneos, 6 contratos concluídos do mesmo serviço | antes: **6 avaliações** criadas (`201×6`); depois: **1** (`201×1, 400×23`, nenhum 500) |
+| Concorrência: 15 pedidos simultâneos no mesmo contrato | 1 criada, 14 × 400 |
+| Experimento: índice removido depois da verificação | voltam **6 avaliações**: o índice, não a consulta prévia, garante a regra |
+| Médias depois de pedidos recusados | `totalAvaliacoes`, `avaliacaoMedia`, resumo do serviço e perfil público inalterados |
+| Fluxo completo pela API (contratar → aceitar → entregar → confirmar → avaliar; recontratar) | 1ª avaliação 201; recontratação 201; 2ª avaliação 400; `meus` marca `servicoJaAvaliado` |
+| Backend local isolado (15 arquivos, `--test-concurrency=1`, sem os 2 de backup com 27017 fixo) | **126/126 pass** |
+| Perfil de testes do CI no Docker, backend (suíte inteira, com `mongodump`) | **142/142 pass**, 0 skip (era 128 depois do H-01; +14 novos) |
+| Frontend (local e no Docker) | **62/62 pass** (+1 novo) |
+
+Uma execução local intermediária teve 2 falhas em `exclusoes.test.js` e `seguranca.test.js`. A causa foi ambiental: `backend/uploads/` tinha sido apagado na limpeza da fase anterior e as imagens padrão não existiam. Depois de `npm run prepare:assets`, os dois arquivos passaram (16/16), e a execução completa seguinte deu 126/126.
+
+**Antes e depois:**
+- **Mesma conta, mesmo serviço, várias recontratações:** antes eram N avaliações 5★; depois, uma só, e as seguintes recebem 400.
+- **Pedidos simultâneos:** antes criavam várias; depois, uma.
+- **Inalterado:** outro cliente avaliando o mesmo serviço, o mesmo cliente avaliando outro serviço do mesmo freelancer, e recontratar o mesmo serviço.
+
+**Limitações restantes:**
+1. **Contas falsas (M-03):** a regra vale por conta. Enquanto o CPF não validar o dígito verificador, contas novas continuam podendo avaliar. M-01 resolve a repetição pela mesma conta; a fraude com várias contas depende de M-03.
+2. **Vários serviços do mesmo freelancer:** uma conta avalia uma vez cada serviço, então a nota do freelancer ainda pode receber uma avaliação por serviço que ele publicar. É coerente com a regra adotada; restringir por freelancer seria outra decisão de produto.
+3. **Índice removido em produção:** a proteção fica em cache depois da primeira verificação. Se alguém apagar o índice com a API no ar, a falha fechada só volta a valer depois de reiniciar a API. (O índice de contratos revalida a cada 5 minutos; aqui não há revalidação.)
+4. **Duplicações antigas** continuam no banco e nas médias, intencionalmente.
+
+**Problema encontrado à parte (não corrigido, fora do escopo):**
+- **T-01 — Testes de backup usam o MongoDB do host.** `backend/test/backupRestore.test.js:18-19` e `backend/test/backupRestoreIntegracao.test.js:14` fixam `mongodb://127.0.0.1:27017/...` e ignoram `MONGO_TEST_URI`. O primeiro sempre conecta e cria/apaga uma base `workly_test_backup_<pid>` no Mongo que estiver na 27017. Numa máquina com o serviço MongoDB instalado, isso é o banco local do desenvolvedor, o que explica parte das sobras `workly_test_*` encontradas nele. As operações destrutivas se limitam a nomes `workly_test_*`, mas o isolamento depende só do nome. Recomendação: respeitar `MONGO_TEST_URI` (só trocando o nome da base) e rodar localmente apenas com Mongo isolado.
