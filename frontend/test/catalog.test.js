@@ -64,7 +64,9 @@ test('featured/category/detail use exact official GET paths and envelope', async
   const requests = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push(url);
-    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    // M-04: no stored bearer token; the session cookie travels on its own with the app header.
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.headers['X-Workly-Requisicao'], '1');
     return Response.json({
       dados:
         url.includes('/categoria/') || url.includes('?')

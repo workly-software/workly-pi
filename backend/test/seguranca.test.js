@@ -10,6 +10,11 @@ process.env.JWT_SECRET = process.env.JWT_SECRET_TEST || crypto.randomBytes(32).t
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+// token do cookie de sessão definido pela resposta (M-04: não vem mais no corpo).
+function sessaoDoCookie(resposta) {
+  const cookie = (resposta.headers.getSetCookie?.() || []).map((c) => c.match(/^workly_sessao=([^;]*)/)).find(Boolean);
+  return cookie ? decodeURIComponent(cookie[1]) : '';
+}
 
 const DB_URI =
   process.env.MONGO_TEST_URI || `mongodb://127.0.0.1:27017/workly_test_seguranca_${process.pid}`;
@@ -87,7 +92,8 @@ function token(usuario, payload = {}, opcoes = {}) {
   );
 }
 async function chamar(metodo, rota, { auth, json, form, bruto, tipo } = {}) {
-  const headers = {};
+  // cabeçalho da aplicação, como o frontend envia (exigido no login e nas sessões por cookie).
+  const headers = { 'X-Workly-Requisicao': '1' };
   if (auth) headers.Authorization = `Bearer ${auth}`;
   let body;
   if (json !== undefined) {
@@ -103,7 +109,7 @@ async function chamar(metodo, rota, { auth, json, form, bruto, tipo } = {}) {
   try {
     dados = JSON.parse(texto);
   } catch {}
-  return { status: resposta.status, dados, headers: resposta.headers };
+  return { status: resposta.status, dados, headers: resposta.headers, sessao: sessaoDoCookie(resposta) };
 }
 function formulario(campo, conteudo, tipo, nome) {
   const form = new FormData();
@@ -201,22 +207,23 @@ test('sessões: trocar a senha revoga tokens antigos e devolve um token novo', a
     json: { senhaAtual: 'senha-forte-1', novaSenha: 'senha-nova-22', confirmarSenha: 'senha-nova-22' }
   });
   assert.equal(troca.status, 200);
-  assert.ok(troca.dados.token);
+  assert.ok(troca.sessao, 'a sessão atual recebe um cookie novo');
+  assert.equal(troca.dados.token, undefined, 'M-04: o token não aparece no corpo');
   assert.equal(troca.dados.user.versaoSessao, undefined);
   for (const velho of [antigo, outroDispositivo]) {
     const negado = await chamar('GET', '/api/usuarios/perfil', { auth: velho });
     assert.equal(negado.status, 401);
     assert.match(negado.dados.mensagem, /token/i);
   }
-  assert.equal((await chamar('GET', '/api/usuarios/perfil', { auth: troca.dados.token })).status, 200);
+  assert.equal((await chamar('GET', '/api/usuarios/perfil', { auth: troca.sessao })).status, 200);
   const login = await chamar('POST', '/api/autenticacao/login', {
     json: { email: usuario.email, senha: 'senha-nova-22' }
   });
   assert.equal(login.status, 200);
-  assert.equal(jwt.decode(login.dados.token, { complete: true }).header.alg, 'HS256');
-  assert.equal((await chamar('GET', '/api/usuarios/perfil', { auth: login.dados.token })).status, 200);
+  assert.equal(jwt.decode(login.sessao, { complete: true }).header.alg, 'HS256');
+  assert.equal((await chamar('GET', '/api/usuarios/perfil', { auth: login.sessao })).status, 200);
   const tipoInvalido = await chamar('PUT', '/api/usuarios/perfil/senha', {
-    auth: login.dados.token,
+    auth: login.sessao,
     json: { senhaAtual: { $ne: '' }, novaSenha: 'senha-nova-33', confirmarSenha: 'senha-nova-33' }
   });
   assert.equal(tipoInvalido.status, 400);

@@ -180,7 +180,7 @@ test('conta antiga com CPF inválido continua entrando e salvando outros dados',
     versaoSessao: 0, removido: false, exclusaoConfirmadaEm: null, removendoDesde: null, createdAt: new Date(), updatedAt: new Date()
   });
   const login = await fetch(amb.base + '/api/autenticacao/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '192.0.2.77' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workly-Requisicao': '1', 'X-Forwarded-For': '192.0.2.77' },
     body: JSON.stringify({ email, senha: 'senha-forte-1' })
   });
   assert.equal(login.status, 200);

@@ -6,7 +6,7 @@ import { createRequestScope } from '../src/services/requestScope.js';
 
 function storage(t) {
   const data = new Map([
-    ['token', 'expired'],
+    ['sessao', 'old-login'],
     ['user', '{}'],
     ['darkMode', 'enabled']
   ]);
@@ -29,7 +29,7 @@ test('an expired token clears the session on a protected request and preserves p
     Response.json({ mensagem: 'Token inválido ou expirado.' }, { status: 401 })
   );
   await assert.rejects(apiRequest('/api/contratos/meus'), { status: 401 });
-  assert.equal(data.has('token'), false);
+  assert.equal(data.has('sessao'), false);
   assert.equal(data.has('user'), false);
   assert.equal(data.get('darkMode'), 'enabled');
 });
@@ -40,7 +40,7 @@ test('an incorrect current password does not log the user out', async (t) => {
     Response.json({ mensagem: 'Senha atual incorreta.' }, { status: 401 })
   );
   await assert.rejects(apiRequest('/api/usuarios/perfil/senha'), { status: 401 });
-  assert.equal(data.get('token'), 'expired');
+  assert.equal(data.get('sessao'), 'old-login');
 });
 
 test('a late 401 from an old session does not clear a new login', async (t) => {
@@ -55,10 +55,11 @@ test('a late 401 from an old session does not clear a new login', async (t) => {
       })
   );
   const request = apiRequest('/api/contratos/meus');
-  data.set('token', 'new-login');
+  // M-04/L-01: the marker of the newer login is what protects it now (the token is an HttpOnly cookie).
+  data.set('sessao', 'new-login');
   finish(Response.json({ mensagem: 'Token inválido ou expirado.' }, { status: 401 }));
   await assert.rejects(request, { status: 401 });
-  assert.equal(data.get('token'), 'new-login');
+  assert.equal(data.get('sessao'), 'new-login');
 });
 
 test('switching conversations discards a delayed result and invalidates sends', async () => {

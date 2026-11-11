@@ -9,8 +9,8 @@ export async function login({ email, senha }) {
     body: JSON.stringify({ email, senha })
   });
   const payload = response?.dados || response;
+  // the session token arrives only as an HttpOnly cookie.
   return {
-    token: payload?.token || response?.token,
     user: normalizarUsuario(
       payload?.user || response?.user || payload?.usuario || response?.usuario
     ),
@@ -65,8 +65,21 @@ export function clearResetToken() {
   pendingResetToken = '';
 }
 
-export function obterToken() {
-  return localStorage.getItem('token');
+// The token is an HttpOnly cookie now; earlier versions kept it in localStorage, so drop any leftover.
+try {
+  globalThis.localStorage?.removeItem('token');
+} catch {}
+
+// Non-secret marker of the current login: tells pages a session is expected (the cookie is unreadable)
+// and lets apiClient ignore a late 401 from an older login.
+export function sessaoIniciada() {
+  return localStorage.getItem('sessao');
+}
+
+export function iniciarSessao(user) {
+  localStorage.removeItem('token');
+  localStorage.setItem('sessao', `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+  salvarSessao({ user });
 }
 
 export function normalizarUsuario(user) {
@@ -91,18 +104,30 @@ export function obterUsuario() {
   }
 }
 
-export function salvarSessao({ token, user }) {
-  if (token) localStorage.setItem('token', token);
+// only the cached user; the session itself is the cookie set by the API.
+export function salvarSessao({ user }) {
   if (user) localStorage.setItem('user', JSON.stringify(normalizarUsuario(user)));
 }
 
 export function limparSessao() {
   localStorage.removeItem('token');
+  localStorage.removeItem('sessao');
   localStorage.removeItem('user');
 }
 
+// asks the API to revoke this session and clear the cookie; the local state is cleared either way.
+export async function sair() {
+  try {
+    await apiRequest('/api/autenticacao/logout', { method: 'POST' });
+  } catch {
+    // offline or already signed out: the cookie expires with the token.
+  } finally {
+    limparSessao();
+  }
+}
+
 export async function buscarUsuarioAtual(force = false) {
-  if (!obterToken()) return null;
+  if (!sessaoIniciada()) return null;
   const stored = obterUsuario();
   if (!force && stored) return stored;
   try {
@@ -110,8 +135,8 @@ export async function buscarUsuarioAtual(force = false) {
     const user = normalizarUsuario(response.user || response.dados?.user);
     salvarSessao({ user });
     return user;
-  } catch (error) {
-    if (error.status === 401) limparSessao();
+  } catch {
+    // apiClient ends the session on a 401, and only if it still belongs to the login that made the request.
     return obterUsuario();
   }
 }

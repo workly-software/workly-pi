@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 import SiteFooter, { FooterSection } from '../SiteFooter';
-import { obterToken } from '../../services/authService';
+import { sessaoIniciada } from '../../services/authService';
 
 // Only destinations that exist; legal/contact pages return once they are published.
 const link =
@@ -35,7 +35,7 @@ export default function AuthFooter({
 }) {
   const sectionStyle = catalog ? (detail || about || compact ? '' : 'mb-[30px]') : section;
   const headingStyle = catalog && (detail || about || compact) ? '' : 'pb-2.5';
-  const groups = [explore, ['Sua conta', obterToken() ? memberAccount : guestAccount]];
+  const groups = [explore, ['Sua conta', sessaoIniciada() ? memberAccount : guestAccount]];
   return (
     <SiteFooter
       catalog={catalog}

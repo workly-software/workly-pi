@@ -31,7 +31,7 @@ function pular(t) {
 }
 
 async function enviar(rota, corpo, xff) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json', 'X-Workly-Requisicao': '1' };
   if (xff !== undefined) headers['X-Forwarded-For'] = xff;
   const resposta = await fetch(amb.base + rota, { method: 'POST', headers, body: JSON.stringify(corpo) });
   let dados = null;

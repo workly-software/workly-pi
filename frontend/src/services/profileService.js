@@ -29,8 +29,8 @@ async function mutate(path, method, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  // password changes revoke older tokens and return a fresh one for this session.
-  if (response.token || response.user) salvarSessao({ token: response.token, user: response.user });
+  // password/e-mail changes revoke older sessions; the API renews this one through the HttpOnly cookie.
+  if (response.user) salvarSessao({ user: response.user });
   return response;
 }
 export const updateProfile = (data) => mutate('/api/usuarios/perfil', 'PUT', data);

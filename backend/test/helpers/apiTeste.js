@@ -18,6 +18,13 @@ function cpfValido(n) {
   return [...base, d1, digito([...base, d1])].join('');
 }
 
+// token do cookie de sessão definido pela resposta (vazio quando a resposta não cria sessão).
+function sessaoDoCookie(resposta) {
+  const cookies = typeof resposta.headers.getSetCookie === 'function' ? resposta.headers.getSetCookie() : [];
+  const valor = cookies.map((c) => c.match(/^workly_sessao=([^;]*)/)).find(Boolean)?.[1];
+  return valor ? decodeURIComponent(valor) : '';
+}
+
 async function iniciarAmbiente(nome) {
   const uri = process.env.MONGO_TEST_URI || `mongodb://127.0.0.1:27017/workly_test_${nome}_${process.pid}`;
   try {
@@ -51,8 +58,9 @@ async function iniciarAmbiente(nome) {
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
+  // envia o cabeçalho da aplicação, como o frontend; "sessao" traz o token do cookie definido pela resposta.
   async function chamar(metodo, rota, usuario, json) {
-    const headers = usuario ? { Authorization: `Bearer ${token(usuario)}` } : {};
+    const headers = { 'X-Workly-Requisicao': '1', ...(usuario ? { Authorization: `Bearer ${token(usuario)}` } : {}) };
     if (json !== undefined) headers['Content-Type'] = 'application/json';
     const resposta = await fetch(base + rota, {
       method: metodo,
@@ -63,7 +71,7 @@ async function iniciarAmbiente(nome) {
     try {
       dados = await resposta.json();
     } catch {}
-    return { status: resposta.status, dados };
+    return { status: resposta.status, dados, sessao: sessaoDoCookie(resposta), headers: resposta.headers };
   }
   async function encerrar() {
     server.close();
@@ -73,4 +81,4 @@ async function iniciarAmbiente(nome) {
   return { base, mongoose, criarUsuario, token, chamar, encerrar };
 }
 
-module.exports = { iniciarAmbiente, cpfValido };
+module.exports = { iniciarAmbiente, cpfValido, sessaoDoCookie };

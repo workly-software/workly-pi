@@ -50,7 +50,8 @@ test('troca de senha de conta legada revoga link pendente e conserva sessão nov
   const saved = await Usuario.collection.findOne({ _id: user._id });
   assert.equal(saved.versaoSessao, 1);
   assert.equal(saved.redefinicaoSenha, undefined);
-  const response = await fetch(amb.base + '/api/usuarios/perfil', { headers: { Authorization: `Bearer ${result.dados.token}` } });
+  const response = await fetch(amb.base + '/api/usuarios/perfil', { headers: { Authorization: `Bearer ${result.sessao}` } });
+  assert.equal(result.dados.token, undefined, 'M-04: o token vai só no cookie HttpOnly');
   assert.equal(response.status, 200);
 });
 
@@ -103,7 +104,7 @@ test('troca já em curso não grava credenciais após exclusão confirmada', asy
   finally { release(); }
   const result = await changing;
   assert.equal(result.status, 409);
-  assert.equal(result.dados.token, undefined);
+  assert.equal(result.sessao, '', 'conflito não cria sessão nova');
   assert.equal((await Usuario.findById(user._id)).removido, true);
 });
 

@@ -5,7 +5,7 @@ import AuthField from '../components/auth/AuthField';
 import { linkStyles, showAuthAlert, submitStyles } from '../components/auth/authPresentation';
 import Button from '../components/ui/Button';
 import { ErrorState, LoadingState } from '../components/ui/Feedback';
-import { login, salvarSessao } from '../services/authService';
+import { login, iniciarSessao } from '../services/authService';
 import logo from '../../assets/img/logo.png';
 import RecoveryModal from '../components/auth/RecoveryModal';
 
@@ -23,7 +23,7 @@ export default function LoginPage() {
     setError('');
     try {
       const result = await login({ email: form.get('email').trim(), senha: form.get('senha') });
-      salvarSessao(result);
+      iniciarSessao(result.user);
       await showAuthAlert({
         icon: 'success',
         title: 'Login realizado!',

@@ -5,7 +5,7 @@ import { assignCovers, officeFor } from '../components/home/offices';
 import ServiceCard from '../components/catalog/ServiceCard';
 import Button from '../components/ui/Button';
 import { ErrorState } from '../components/ui/Feedback';
-import { buscarUsuarioAtual, obterToken } from '../services/authService';
+import { buscarUsuarioAtual, sessaoIniciada } from '../services/authService';
 import {
   categoryLabel,
   serviceDetail,
@@ -92,7 +92,7 @@ export default function ServiceDetailPage() {
         const result = await serviceDetail(id, { signal: controller.signal });
         if (!mounted) return;
         setData(result);
-        if (obterToken()) {
+        if (sessaoIniciada()) {
           try {
             const value = await favoriteStatus(result.service.idServico || id);
             if (mounted) setSaved(value);
@@ -167,7 +167,7 @@ export default function ServiceDetailPage() {
   }
   async function favorite() {
     if (!data) return;
-    if (!obterToken()) return needLogin('Entre para salvar favoritos.');
+    if (!sessaoIniciada()) return needLogin('Entre para salvar favoritos.');
     const previous = saved;
     setSaving(true);
     try {

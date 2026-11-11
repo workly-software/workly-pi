@@ -72,7 +72,11 @@ test('profile services use official endpoints, bearer, partial fields and crop u
   );
   assert.equal(requests[2][1].body, '{"doisFatores":false}');
   assert.equal(requests[5][1].body.get('nova_foto').name, 'foto-perfil.webp');
-  for (const [, options] of requests) assert.equal(options.headers.Authorization, 'Bearer qa');
+  // M-04: no stored bearer token; every call carries the app header and the session cookie.
+  for (const [, options] of requests) {
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.headers['X-Workly-Requisicao'], '1');
+  }
   t.mock.method(globalThis, 'fetch', async () =>
     Response.json({ mensagem: 'Senha atual incorreta.' }, { status: 401 })
   );
@@ -88,8 +92,8 @@ test('changing the login e-mail is detected like the backend does (M-02)', () =>
   assert.equal(emailChanged(undefined, 'ana@x.com'), true);
   assert.equal(emailChanged('ana@x.com', ''), false);
 });
-test('e-mail change sends the current password, keeps the session on 403 and stores the new token', async (t) => {
-  const values = new Map([['token', 'antigo']]);
+test('e-mail change sends the current password, keeps the session on 403 and refreshes the cached user', async (t) => {
+  const values = new Map([['sessao', 's1']]);
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
@@ -108,14 +112,16 @@ test('e-mail change sends the current password, keeps the session on 403 and sto
     return Response.json({ sucesso: false, mensagem: 'Senha atual incorreta.' }, { status: 403 });
   });
   await assert.rejects(updateProfile({ email: 'novo@x.com', senhaAtual: 'errada' }), (e) => e.status === 403);
-  assert.equal(values.get('token'), 'antigo', 'a wrong password must not end the session');
+  assert.equal(values.get('sessao'), 's1', 'a wrong password must not end the session');
   assert.deepEqual(bodies[0], { email: 'novo@x.com', senhaAtual: 'errada' });
 
+  // the API renews this session through the HttpOnly cookie; nothing secret is stored by the page.
   t.mock.method(globalThis, 'fetch', async () =>
-    Response.json({ sucesso: true, token: 'novo-token', user: { nome: 'Ana', email: 'novo@x.com' } })
+    Response.json({ sucesso: true, user: { nome: 'Ana', email: 'novo@x.com' } })
   );
   await updateProfile({ email: 'novo@x.com', senhaAtual: 'certa' });
-  assert.equal(values.get('token'), 'novo-token', 'the other sessions were revoked; this one keeps working');
+  assert.equal(values.has('token'), false);
+  assert.equal(values.get('sessao'), 's1', 'this session keeps working');
   assert.equal(JSON.parse(values.get('user')).email, 'novo@x.com');
 });
 test('dashboard fallback excludes pending contracts and uses useful official dashboard', () => {

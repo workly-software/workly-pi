@@ -21,6 +21,7 @@ const {
 const { removerArquivoSeExistir } = require('../utils/arquivoUtils');
 const { validarAtualizacaoPerfil } = require('../utils/validacaoPerfil');
 const { emitirToken } = require('../utils/tokenSessao');
+const { definirCookieSessao, limparCookieSessao } = require('../utils/cookieSessao');
 const { excluirConta } = require('../services/contaService');
 
 // serviços retirados não aparecem em perfis, dashboards nem contagens.
@@ -546,8 +547,8 @@ async function trocarEmail(req, res, atual, campos) {
   if (!atualizado) {
     return erro(res, 409, 'Suas credenciais foram atualizadas durante esta operação. Entre novamente.');
   }
+  definirCookieSessao(req, res, emitirToken(atualizado));
   return sucesso(res, 200, 'E-mail atualizado. As outras sessões foram encerradas.', null, {
-    token: emitirToken(atualizado),
     user: mapUsuario(req, atualizado)
   });
 }
@@ -747,8 +748,9 @@ exports.atualizarSenha = async (req, res) => {
     );
     if (!atualizado) return erro(res, 409, 'Suas credenciais foram atualizadas durante esta operação. Entre novamente.');
 
+    // as outras sessões caíram com a nova versão; esta recebe um cookie novo e continua conectada.
+    definirCookieSessao(req, res, emitirToken(atualizado));
     return sucesso(res, 200, 'Senha atualizada com sucesso!', null, {
-      token: emitirToken(atualizado),
       user: mapUsuario(req, atualizado)
     });
   } catch (error) {
@@ -764,6 +766,7 @@ exports.excluirPerfil = async (req, res) => {
     const senhaAtual = obterCampo(req.body || {}, ['senhaAtual', 'senha', 'currentPassword']);
     const resultado = await excluirConta(req.user.id_usuario, senhaAtual);
     if (!resultado.ok) return erro(res, resultado.status, resultado.mensagem);
+    limparCookieSessao(req, res);
     return sucesso(res, 200, 'Conta excluída com sucesso.');
   } catch (error) {
     console.error(error);

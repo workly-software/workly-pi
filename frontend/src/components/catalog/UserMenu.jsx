@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import NotificationMenu from './NotificationMenu';
 import Button from '../ui/Button';
-import { limparSessao } from '../../services/authService';
+import { sair } from '../../services/authService';
 import { defaultProfileImage } from '../../services/catalogService';
 
 export default function UserMenu({ user }) {
@@ -60,9 +60,10 @@ export default function UserMenu({ user }) {
                 to={href}
                 onClick={
                   text === 'Sair'
-                    ? (event) => {
+                    ? async (event) => {
                         event.preventDefault();
-                        limparSessao();
+                        // the API revokes this session's token; the other devices stay signed in.
+                        await sair();
                         location.assign('/');
                       }
                     : () => setOpen(false)

@@ -1,9 +1,16 @@
 const bcrypt = require('bcryptjs');
 const Usuario = require('../models/Usuario');
-const { emitirToken } = require('../utils/tokenSessao');
+const { emitirToken, verificarToken } = require('../utils/tokenSessao');
+const SessaoRevogada = require('../models/SessaoRevogada');
+const {
+  definirCookieSessao,
+  limparCookieSessao,
+  lerCookieSessao,
+  requisicaoDoAplicativo
+} = require('../utils/cookieSessao');
 const { mapUsuario } = require('../utils/mapeadoresResposta');
 const { sucesso, erro } = require('../utils/apiResponse');
-const { obterCampo, normalizarTipoConta } = require('../utils/requisicaoUtils');
+const { obterCampo, normalizarTipoConta, idMongoValido } = require('../utils/requisicaoUtils');
 const { normalizarCpf, motivoCpfInvalido } = require('../utils/cpfUtils');
 const recuperacaoSenha = require('../services/recuperacaoSenhaService');
 const { motivoNovaSenhaInvalida } = require('../utils/senhaUtils');
@@ -98,6 +105,9 @@ exports.cadastrar = async (req, res) => {
 // para não revelar se o e-mail existe no sistema.
 exports.entrar = async (req, res) => {
   try {
+    // o login cria o cookie de sessão: sem o cabeçalho da aplicação, um formulário de outro site
+    // poderia entrar o visitante numa conta escolhida pelo atacante (login CSRF).
+    if (!requisicaoDoAplicativo(req)) return erro(res, 403, 'Requisição recusada.');
     const email = obterCampo(req.body, ['email']);
     const senha = obterCampo(req.body, ['senha']);
 
@@ -114,14 +124,52 @@ exports.entrar = async (req, res) => {
       return erro(res, 401, 'Credenciais inválidas.');
     }
 
-    const token = emitirToken(usuario);
+    // o token vai só no cookie HttpOnly; o corpo da resposta não o expõe a scripts da página.
+    definirCookieSessao(req, res, emitirToken(usuario));
 
     return sucesso(res, 200, 'Login realizado com sucesso.', null, {
-      token,
       user: mapUsuario(req, usuario)
     });
   } catch (error) {
     console.error(error);
+    return erro(res, 500, 'Erro no servidor.');
+  }
+};
+
+// logout: revoga só o token desta sessão (os outros aparelhos continuam conectados) e apaga o cookie.
+// Responde 200 mesmo sem sessão válida, para o navegador sempre conseguir sair.
+// Tokens antigos, sem "jti", não podem ser revogados um a um: para eles, todas as sessões são encerradas.
+exports.sair = async (req, res) => {
+  try {
+    const cabecalho = req.header('Authorization');
+    const token = cabecalho ? cabecalho.replace(/^Bearer\s+/i, '').trim() : lerCookieSessao(req);
+    if (!cabecalho && !requisicaoDoAplicativo(req)) return erro(res, 403, 'Requisição recusada.');
+    let dados = null;
+    try {
+      dados = token ? verificarToken(token) : null;
+    } catch {
+      dados = null;
+    }
+    if (dados?.jti && dados.exp) {
+      await SessaoRevogada.updateOne(
+        { jti: dados.jti },
+        { $setOnInsert: { jti: dados.jti, expiraEm: new Date(dados.exp * 1000) } },
+        { upsert: true }
+      );
+    } else if (idMongoValido(dados?.id_usuario)) {
+      const versao = Number(dados.sv || 0);
+      await Usuario.updateOne(
+        {
+          _id: dados.id_usuario,
+          ...(versao === 0 ? { $or: [{ versaoSessao: 0 }, { versaoSessao: { $exists: false } }] } : { versaoSessao: versao })
+        },
+        { $inc: { versaoSessao: 1 } }
+      );
+    }
+    limparCookieSessao(req, res);
+    return sucesso(res, 200, 'Sessão encerrada.');
+  } catch (error) {
+    console.error('Erro ao encerrar sessão:', error?.message || error);
     return erro(res, 500, 'Erro no servidor.');
   }
 };

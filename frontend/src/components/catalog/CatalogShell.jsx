@@ -3,7 +3,7 @@ import { useLocation } from 'react-router';
 import AuthShell from '../auth/AuthShell';
 import AuthHeader from '../auth/AuthHeader';
 import AuthFooter from '../auth/AuthFooter';
-import { buscarUsuarioAtual, obterUsuario, obterToken } from '../../services/authService';
+import { buscarUsuarioAtual, obterUsuario, sessaoIniciada } from '../../services/authService';
 import UserMenu from './UserMenu';
 import CategoryNavigation from './CategoryNavigation';
 
@@ -20,7 +20,7 @@ export default function CatalogShell({
   active: activeCategory
 }) {
   const location = useLocation(),
-    [user, setUser] = useState(() => (obterToken() ? obterUsuario() : null));
+    [user, setUser] = useState(() => (sessaoIniciada() ? obterUsuario() : null));
   const params = new URLSearchParams(location.search),
     active = activeCategory ?? (params.get('id') || params.get('id_categoria'));
   useEffect(() => {

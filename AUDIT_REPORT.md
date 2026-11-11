@@ -13,7 +13,7 @@
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 1 (H-01 corrigido; ver seção 11) |
-| MEDIUM | 6 (M-01 e M-02 corrigidos, M-03 parcial; ver seção 11) |
+| MEDIUM | 6 (M-01, M-02 e M-04 corrigidos, M-03 parcial; ver seção 11) |
 | LOW | 15 |
 | INFORMATIONAL | 5 |
 | Falsos positivos investigados | 14 |
@@ -126,6 +126,7 @@ arquivos estáticos                                               MongoDB 8 (Mon
 - **Impacto:** amplia qualquer vazamento de token. Combinado com M-02, permite tomar a conta.
 - **Correção:** criar `POST /api/autenticacao/logout` que incremente `versaoSessao` (ou uma lista de revogação). Reduzir a validade com refresh token. Preferir cookie `HttpOnly; Secure; SameSite` (com proteção CSRF) a `localStorage`.
 - **Reproduzido:** sim (validade e comportamento do logout).
+- **Status: CORRIGIDO** na `main` (2026-11-11; ainda sem commit): cookie HttpOnly de 24 h, proteção CSRF e logout com revogação no servidor (seção 11).
 
 #### M-05 — Campos de texto sem limite de tamanho (contratos e avaliações públicas)
 - **Severidade / confiança:** MEDIUM / CONFIRMED
@@ -157,6 +158,7 @@ arquivos estáticos                                               MongoDB 8 (Mon
 - `buscarUsuarioAtual` chama `limparSessao()` em todo 401 e ignora a proteção do `apiClient.js:23`, que compara o token. Se o usuário fizer login enquanto um `GET /api/usuarios/perfil` com token antigo ainda está em andamento, a resposta 401 atrasada apaga o login novo.
 - **Reprodução:** teste isolado `authRace.test.mjs` (no scratchpad da auditoria). O controle com `apiRequest` passou e preservou `new-login`. O caso com `buscarUsuarioAtual(true)` falhou com `actual: undefined, expected: 'new-login'`.
 - **Correção:** remover o `if (error.status === 401) limparSessao();` e deixar o `apiClient` como único responsável por encerrar a sessão.
+- **Status: CORRIGIDO** junto com o M-04: a limpeza incondicional foi removida e a proteção contra o 401 atrasado passou a usar o marcador de sessão (seção 11).
 
 #### L-02 — Corpo ausente gera 500 em 5 endpoints
 - **Confiança:** CONFIRMED. **Local:** `contratoController.js:106` (`req.body.servicoId`), `mensagemController.js` (`enviar`, `req.body.contratoId`), `avaliacaoController.js:21`, `favoritoController.js` (`criar`), `notificacaoController.js:130`.
@@ -590,3 +592,69 @@ Uma execução local intermediária teve 2 falhas em `exclusoes.test.js` e `segu
 1. **Confirmação do novo endereço e aviso ao e-mail antigo** dependem de um provedor de e-mail, que o projeto não tem. Hoje quem sabe a senha troca o e-mail para qualquer endereço sem prová-lo.
 2. **Tentativas de senha sem limite** nesta rota, como já era em troca de senha e exclusão de conta (L-08): quem tem o token pode testar senhas. Fica para o L-08.
 3. **Token em `localStorage` e logout só no navegador** continuam (M-04).
+
+### M-04 — CORRIGIDO (`main`, sem commit) — inclui L-01
+
+**Causa raiz:** o JWT de 7 dias era devolvido no corpo do login e guardado no `localStorage`, legível por qualquer script da página. O "Sair" só apagava a cópia local; o token copiado continuava valendo até expirar.
+
+**Decisões do produto:** sessão de **24 horas** e migração **agora** para cookie `HttpOnly`.
+
+**Como ficou:**
+- **Cookie `workly_sessao`:** `HttpOnly`, `SameSite=Strict`, `Path=/api`, `Max-Age` de 24 h. `Secure` quando a requisição chega por HTTPS (`req.secure`) ou com `COOKIE_SECURE=true`. O token **não aparece em nenhuma resposta** (login, troca de senha, troca de e-mail).
+- **CSRF:** sessões por cookie, o login (contra login CSRF) e o logout exigem o cabeçalho `X-Workly-Requisicao: 1`. Outro site não consegue enviá-lo sem passar pelo CORS; somado ao `SameSite=Strict`, um pedido forjado é recusado com 403.
+- **Bearer** continua aceito para clientes de API (não depende do cabeçalho).
+- **Logout:** `POST /api/autenticacao/logout` revoga só o token desta sessão (lista `sessoes_revogadas` por `jti`, com índice TTL que apaga o registro quando o token expiraria) e apaga o cookie. Os outros aparelhos seguem conectados. Responde 200 mesmo sem sessão. Tokens antigos, sem `jti`, não podem ser revogados um a um: para eles, todas as sessões da conta são encerradas.
+- **Troca de senha e de e-mail** renovam o cookie; **excluir a conta** o apaga.
+- **Frontend:** não guarda mais o token. O `localStorage` mantém só o cache do usuário e `sessao`, um marcador sem valor secreto que indica login e protege contra o 401 atrasado (corrige o **L-01**). O token deixado por versões anteriores é apagado ao carregar a aplicação. O "Sair" chama o logout do servidor.
+
+**Alterações:**
+
+| Arquivo | Mudança |
+|---|---|
+| `backend/src/utils/tokenSessao.js` | validade de 24 h; `jti` por sessão. |
+| `backend/src/utils/cookieSessao.js` (novo) | criar, apagar e ler o cookie; checagem do cabeçalho da aplicação. |
+| `backend/src/models/SessaoRevogada.js` (novo) | sessões revogadas, com TTL. |
+| `backend/src/middleware/autenticacaoMiddleware.js` | token do `Authorization` ou do cookie (este exige o cabeçalho); recusa `jti` revogado. |
+| `backend/src/controllers/autenticacaoController.js`, `routes/autenticacaoRoutes.js` | login define o cookie e exige o cabeçalho; novo `sair` (logout). |
+| `backend/src/controllers/usuarioController.js` | troca de senha/e-mail renovam o cookie; exclusão o apaga. |
+| `backend/src/config/ambiente.js`, `backend/.env.example` | `COOKIE_SECURE`. |
+| `frontend/src/services/apiClient.js` | cabeçalho da aplicação, `credentials: 'same-origin'`, sem Bearer; encerramento local pelo marcador. |
+| `frontend/src/services/authService.js` | `iniciarSessao`, `sessaoIniciada`, `sair`; remove o token legado; `buscarUsuarioAtual` sem limpeza incondicional (L-01). |
+| `profileService.js`, `LoginPage.jsx`, `UserMenu.jsx`, `AuthFooter.jsx`, `CatalogShell.jsx`, `useSession.js`, `ServiceDetailPage.jsx`, `ServiceEditorPage.jsx` | uso da nova sessão. |
+| `backend/test/sessaoCookie.test.js` (novo) | 11 testes. |
+| Testes existentes ajustados | backend: `helpers/apiTeste.js` (envia o cabeçalho e lê o token do cookie), `seguranca`, `fechamento`, `emailReautenticacao`, `limiteAutenticacao`, `cpfCadastro`. Frontend: `apiClient`, `release`, `catalog`, `profile`. Eles verificavam o token no corpo ou o Bearer lido do `localStorage`, exatamente o comportamento substituído. O teste da corrida do 401 atrasado (`release.test.js`) passava **por acaso** depois da mudança, porque ainda usava a chave `token`; foi atualizado para o marcador e voltou a verificar a proteção. Foram acrescentados 3 testes de frontend (início de sessão, `sair` com e sem rede, e o L-01 por `buscarUsuarioAtual`). |
+
+**Isolamento do banco:** testes locais e navegador contra containers `mongo:8.0` dedicados em `127.0.0.1:27118`, conferidos pelo hostname antes de cada uso; a suíte completa e a stack com nginx em projetos Docker próprios, derrubados com `down --volumes`. O MongoDB do host não foi acessado.
+
+**Testes e resultados:**
+
+| Verificação | Resultado |
+|---|---|
+| `sessaoCookie.test.js` (11) contra o backend **original** | **11 fail** (a maioria na preparação, porque o modelo de revogação não existia; o de login falha porque o token vem no corpo e não há cookie) |
+| `sessaoCookie.test.js` com a correção | **11/11 pass** |
+| Backend local isolado (19 arquivos) | **158/158 pass** |
+| Perfil de testes do CI no Docker, backend | **174/174 pass** (2 de 2 rodadas) |
+| Frontend (local e Docker) + build | **67/67 pass**, build ok |
+| Navegador real (Playwright, API + Vite): login | corpo sem token; cookie `HttpOnly`, `Strict`, `/api`, 24 h; `document.cookie` não o vê; `localStorage` só com `sessao` e `user`; token legado apagado; nenhum JWT no storage |
+| Navegador: `/perfil` e recarregar | continua logado |
+| Navegador: `fetch` sem o cabeçalho / com o cabeçalho | 403 / 200 |
+| Navegador: "Sair" | logout 200; cookie e storage limpos; `/perfil` → `/login`; **token copiado antes do logout → 401**; outro aparelho → 200 |
+| Stack Docker com nginx | cookie atravessa o proxy com os atributos; perfil 200; logout 200; mesmo cookie depois → 401; smoke aprovado |
+
+**Antes e depois:**
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| Script na página (XSS) lê a sessão | lia o token no `localStorage` | não consegue: cookie `HttpOnly` |
+| Token copiado depois do "Sair" | válido por até 7 dias | 401 imediato |
+| Validade da sessão | 7 dias | 24 horas |
+| Pedido forjado por outro site | não se aplicava (Bearer) | 403 (cabeçalho ausente + `SameSite=Strict`) |
+| 401 atrasado de login antigo | apagava o login novo via `buscarUsuarioAtual` (L-01) | ignorado |
+
+**Limitações restantes:**
+1. **XSS ainda age dentro da página:** o cookie não pode ser lido, mas um script injetado pode fazer chamadas autenticadas enquanto a página estiver aberta. A defesa contra isso é CSP e cuidado com a saída (L-05).
+2. **Sem renovação automática:** depois de 24 horas o usuário precisa entrar de novo, mesmo em uso contínuo.
+3. **Mesma origem obrigatória:** com `SameSite=Strict` e `credentials: 'same-origin'`, a API precisa estar na mesma origem do frontend (como no nginx do Docker e no proxy do Vite). Um `VITE_API_URL` em outro domínio deixaria de enviar o cookie.
+4. **`Secure` atrás de TLS externo:** se o HTTPS terminar antes do nginx, `req.secure` vê HTTP; nesse caso é preciso `COOKIE_SECURE=true` (documentado no `.env.example`).
+5. **Tokens antigos:** quem estava logado antes da atualização perde a sessão ao carregar a nova versão (o token legado é apagado) e precisa entrar de novo. Tokens antigos copiados ainda valem até expirar (no máximo 7 dias), a menos que o dono faça logout ou troque a senha.
+6. **Revogação depende do banco:** cada requisição autenticada faz uma consulta a mais (`sessoes_revogadas` por `jti`, indexada).

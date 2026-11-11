@@ -8,6 +8,8 @@ router.post('/cadastro', controller.cadastrar);
 
 router.post('/login', controller.entrar);
 
+router.post('/logout', controller.sair);
+
 // recuperação de senha (limites por IP e por e-mail aplicados em app.js).
 router.post('/recuperar-senha', controller.solicitarRedefinicao);
 

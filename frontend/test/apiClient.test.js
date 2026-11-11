@@ -6,7 +6,10 @@ import {
   obterUsuario,
   salvarSessao,
   login,
-  cadastrar
+  cadastrar,
+  iniciarSessao,
+  sessaoIniciada,
+  sair
 } from '../src/services/authService.js';
 
 function setup(t, values = {}) {
@@ -41,11 +44,12 @@ test('login posts only official credentials and normalizes official response ali
     return Response.json({
       sucesso: true,
       mensagem: 'Login realizado com sucesso.',
-      dados: { token: 'jwt', usuario: { id_usuario: 'qa', tipo_conta: 'Contratante' } }
+      dados: { usuario: { id_usuario: 'qa', tipo_conta: 'Contratante' } }
     });
   });
   const result = await login({ email: 'qa@example.invalid', senha: 'password' });
-  assert.equal(result.token, 'jwt');
+  // M-04: the session token arrives only as an HttpOnly cookie, never in the result.
+  assert.equal('token' in result, false);
   assert.equal(result.user.idUsuario, 'qa');
   assert.equal(result.user.tipoConta, 'Contratante');
 });
@@ -85,8 +89,8 @@ test('auth services retain credential and duplicate-email error messages', async
   );
 });
 
-test('API preserves the official envelope and adds the stored bearer token', async (t) => {
-  setup(t, { token: 'test-token' });
+test('API preserves the official envelope, sends the app header and never a stored token (M-04)', async (t) => {
+  setup(t, { token: 'leftover-legacy-token', sessao: 's1' });
   const envelope = {
     sucesso: true,
     mensagem: 'Perfil carregado.',
@@ -95,7 +99,9 @@ test('API preserves the official envelope and adds the stored bearer token', asy
   };
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, '/api/usuarios/perfil');
-    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.headers.Authorization, undefined);
+    assert.equal(options.headers['X-Workly-Requisicao'], '1');
+    assert.equal(options.credentials, 'same-origin');
     return Response.json(envelope);
   });
   assert.deepEqual(await apiRequest('/api/usuarios/perfil'), envelope);
@@ -146,7 +152,7 @@ test('API handles non-JSON error bodies without masking the HTTP failure', async
 
 test('fetchCurrentUser clears only session keys on 401, preserving the theme', async (t) => {
   const data = setup(t, {
-    token: 'expired-token',
+    sessao: 's1',
     user: JSON.stringify({ idUsuario: 'user-id' }),
     darkMode: 'enabled'
   });
@@ -154,17 +160,63 @@ test('fetchCurrentUser clears only session keys on 401, preserving the theme', a
     Response.json({ mensagem: 'Token invalido ou expirado.' }, { status: 401 })
   );
   assert.equal(await buscarUsuarioAtual(true), null);
-  assert.equal(data.has('token'), false);
+  assert.equal(data.has('sessao'), false);
   assert.equal(data.has('user'), false);
   assert.equal(data.get('darkMode'), 'enabled');
 });
 
 test('fetchCurrentUser retains the cached user on network failure, as the legacy client does', async (t) => {
-  setup(t, { token: 'test-token' });
+  setup(t, { sessao: 's1' });
   salvarSessao({ user: { id_usuario: 'user-id', tipo_conta: 'Freelancer' } });
   t.mock.method(globalThis, 'fetch', async () => {
     throw new TypeError('Failed to fetch');
   });
   assert.equal((await buscarUsuarioAtual(true)).idUsuario, 'user-id');
   assert.equal(obterUsuario().tipoConta, 'Freelancer');
+});
+
+test('M-04: login starts a session marker, drops any legacy token and stores no secret', (t) => {
+  const data = setup(t, { token: 'legacy-token-from-old-version' });
+  iniciarSessao({ id_usuario: 'qa', tipo_conta: 'Contratante' });
+  assert.equal(data.has('token'), false);
+  assert.ok(sessaoIniciada());
+  assert.equal(obterUsuario().idUsuario, 'qa');
+  const marker = sessaoIniciada();
+  iniciarSessao({ id_usuario: 'qa' });
+  assert.notEqual(sessaoIniciada(), marker, 'each login gets its own marker');
+});
+
+test('M-04: sair revokes the session on the API and clears local state, even offline', async (t) => {
+  const data = setup(t, { sessao: 's1', user: '{}', darkMode: 'enabled' });
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push([url, options.method, options.headers['X-Workly-Requisicao']]);
+    return Response.json({ sucesso: true });
+  });
+  await sair();
+  assert.deepEqual(calls, [['/api/autenticacao/logout', 'POST', '1']]);
+  assert.equal(data.has('sessao'), false);
+  assert.equal(data.has('user'), false);
+  assert.equal(data.get('darkMode'), 'enabled');
+
+  data.set('sessao', 's2');
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new TypeError('Failed to fetch');
+  });
+  await sair();
+  assert.equal(data.has('sessao'), false, 'a network failure still signs the browser out');
+});
+
+test('L-01: a late 401 from an older login does not clear a newer session through fetchCurrentUser', async (t) => {
+  const data = setup(t, { sessao: 'old-login' });
+  let finish;
+  t.mock.method(globalThis, 'fetch', () => new Promise((resolve) => { finish = resolve; }));
+  const pending = buscarUsuarioAtual(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  iniciarSessao({ id_usuario: 'new' });
+  const newer = data.get('sessao');
+  finish(Response.json({ mensagem: 'Token inválido ou expirado.' }, { status: 401 }));
+  await pending;
+  assert.equal(data.get('sessao'), newer);
+  assert.equal(obterUsuario().idUsuario, 'new');
 });

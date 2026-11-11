@@ -4,7 +4,7 @@ import CatalogShell from '../components/catalog/CatalogShell';
 import Button from '../components/ui/Button';
 import FormField from '../components/ui/FormField';
 import { LoadingState } from '../components/ui/Feedback';
-import { buscarUsuarioAtual, obterToken } from '../services/authService';
+import { buscarUsuarioAtual, sessaoIniciada } from '../services/authService';
 import {
   categories,
   defaultServiceImage,
@@ -62,7 +62,7 @@ export default function ServiceEditorPage({ editing = false }) {
     (async () => {
       const user = await buscarUsuarioAtual(true);
       if (!active) return;
-      if (!obterToken() || !user) {
+      if (!sessaoIniciada() || !user) {
         if (!editing)
           await showAuthAlert({
             icon: 'warning',

@@ -1,11 +1,17 @@
 const API_BASE_URL = String(import.meta.env?.VITE_API_URL || '').replace(/\/$/, '');
 
+// The session token lives in an HttpOnly cookie that scripts cannot read; the browser sends it with
+// same-origin requests. The header below proves the call came from this app (CSRF protection).
+// localStorage only keeps "sessao", a non-secret marker of the current login, and the cached user.
 export async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem('token');
-  const headers = { ...(options.headers || {}) };
-  if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
+  const session = localStorage.getItem('sessao');
+  const headers = { 'X-Workly-Requisicao': '1', ...(options.headers || {}) };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'same-origin',
+    ...options,
+    headers
+  });
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json')
     ? await response.json()
@@ -18,10 +24,11 @@ export async function apiRequest(path, options = {}) {
       (typeof data === 'string' ? data : 'Erro na requisi\u00e7\u00e3o.');
     const isSessionFailure =
       response.status === 401 &&
-      token &&
+      session &&
       (path === '/api/usuarios/perfil' || /token/i.test(message));
-    if (isSessionFailure && localStorage.getItem('token') === token) {
-      localStorage.removeItem('token');
+    // a late 401 from an older login must not end a newer one.
+    if (isSessionFailure && localStorage.getItem('sessao') === session) {
+      localStorage.removeItem('sessao');
       localStorage.removeItem('user');
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('workly:session-expired'));
     }
