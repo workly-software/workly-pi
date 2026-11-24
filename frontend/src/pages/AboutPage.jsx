@@ -6,8 +6,15 @@ const members = [
     name: 'Cauã',
     role: 'Desenvolvedor',
     image: '20250404_083557.jpg',
-    text: 'Tenho 20 anos, estudo na FATEC desde 2023 e atualmente curso Desenvolvimento de Software Multiplataforma. Atuo como desenvolvedor principal da Workly.',
+    text: 'Tenho 20 anos, estudo na FATEC desde 2023 e atualmente curso Desenvolvimento de Software Multiplataforma. Atuo como desenvolvedor da Workly.',
     href: 'https://github.com/CauaMora'
+  },
+  {
+    name: 'Vitor',
+    role: 'Desenvolvedor',
+    image: 'vitor.webp',
+    text: 'Estudo Desenvolvimento de Software Multiplataforma na FATEC Jaú e atuo como desenvolvedor da Workly.',
+    href: 'https://github.com/vitorperasoli'
   },
   {
     name: 'José',
@@ -55,9 +62,9 @@ export default function AboutPage() {
             key={member.name}
             data-team-member
             data-visible="false"
-            className={`mb-7 grid translate-y-6 grid-cols-[180px_minmax(0,1fr)] motion-reduce:translate-y-0 motion-reduce:opacity-100 items-center gap-7 text-left opacity-0 transition-[opacity,transform] duration-[500ms] ease-workly-out data-[visible=true]:translate-y-0 data-[visible=true]:opacity-100 dark:items-stretch dark:gap-6 legacy-max-860:grid-cols-1 legacy-max-860:text-center ${index === 1 ? 'min-[861px]:grid-cols-[minmax(0,1fr)_180px]' : ''}`}
+            className={`mb-7 grid translate-y-6 grid-cols-[180px_minmax(0,1fr)] motion-reduce:translate-y-0 motion-reduce:opacity-100 items-center gap-7 text-left opacity-0 transition-[opacity,transform] duration-[500ms] ease-workly-out data-[visible=true]:translate-y-0 data-[visible=true]:opacity-100 dark:items-stretch dark:gap-6 legacy-max-860:grid-cols-1 legacy-max-860:text-center ${index % 2 === 1 ? 'min-[861px]:grid-cols-[minmax(0,1fr)_180px]' : ''}`}
           >
-            <div className={`flex justify-center ${index === 1 ? 'min-[861px]:order-2' : ''}`}>
+            <div className={`flex justify-center ${index % 2 === 1 ? 'min-[861px]:order-2' : ''}`}>
               <img
                 loading="lazy"
                 decoding="async"
