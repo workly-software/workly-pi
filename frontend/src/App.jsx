@@ -12,6 +12,7 @@ import GuestRoute from './components/GuestRoute.jsx';
 import HomePage from './pages/HomePage.jsx';
 import CategoryPage from './pages/CategoryPage.jsx';
 import ServiceDetailPage from './pages/ServiceDetailPage.jsx';
+import AllServicesPage from './pages/AllServicesPage.jsx';
 
 import ProfilePage from './pages/ProfilePage.jsx';
 import PublicProfilePage from './pages/PublicProfilePage.jsx';
@@ -23,7 +24,6 @@ import ContractsPage from './pages/ContractsPage.jsx';
 const MessagesPage = lazy(() => import('./pages/MessagesPage.jsx'));
 const ContractChatPage = lazy(() => import('./pages/ContractChatPage.jsx'));
 const FavoritesPage = lazy(() => import('./pages/FavoritesPage.jsx'));
-const AllServicesPage = lazy(() => import('./pages/AllServicesPage.jsx'));
 const AboutPage = lazy(() => import('./pages/AboutPage.jsx'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.jsx'));
 function SocialPage({ Page }) {
@@ -41,7 +41,7 @@ export default function App() {
       <Route path="/categorias" element={<CategoryPage />} />
       <Route path="/detalhe-servico" element={<ServiceDetailPage />} />
       <Route path="/perfil-publico" element={<PublicProfilePage />} />
-      <Route path="/todos-servicos" element={<SocialPage Page={AllServicesPage} />} />
+      <Route path="/todos-servicos" element={<AllServicesPage />} />
       <Route path="/sobre" element={<SocialPage Page={AboutPage} />} />
       <Route path="/redefinir-senha" element={<SocialPage Page={ResetPasswordPage} />} />
       <Route element={<GuestRoute />}>

@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// Execute depois de subir o Compose: este teste remove/recria seus containers,
-// preserva os volumes e grava apenas dois marcadores temporários próprios.
+// Remove e recria os containers do Compose; os volumes são mantidos.
 const cwd = fileURLToPath(new URL('../', import.meta.url));
 const id = randomUUID();
 const arquivo = `uploads/perfis/docker_test_${id}.svg`;

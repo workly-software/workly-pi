@@ -6,11 +6,12 @@ import CategoryNavigation from '../components/catalog/CategoryNavigation';
 import { assignCovers, offices } from '../components/home/offices';
 
 const heroPhotos = [
-  '/assets/img/oficios/design.jpg',
-  '/assets/img/oficios/video-2.jpg',
-  '/assets/img/oficios/audio-3.jpg'
+  '/assets/img/oficios/design.webp',
+  '/assets/img/oficios/video-2.webp',
+  '/assets/img/oficios/audio-3.webp'
 ];
-import { LoadingState, StatePanel } from '../components/ui/Feedback';
+import { StatePanel } from '../components/ui/Feedback';
+import ServiceCardSkeleton from '../components/catalog/ServiceCardSkeleton';
 import Button from '../components/ui/Button';
 import { featuredServices } from '../services/catalogService';
 
@@ -143,7 +144,7 @@ export default function HomePage() {
                 }
               />
             ) : !services ? (
-              <LoadingState message="Buscando serviços bem avaliados…" className="col-span-full" />
+              <ServiceCardSkeleton message="Buscando serviços bem avaliados…" />
             ) : !services.length ? (
               <StatePanel
                 icon="fa-star"

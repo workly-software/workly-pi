@@ -166,23 +166,24 @@ export default function ServiceDetailPage() {
     );
   }
   async function favorite() {
-    if (!data) return;
+    if (!data || saving) return;
     if (!sessaoIniciada()) return needLogin('Entre para salvar favoritos.');
     const previous = saved;
+    setSaved(!previous);
     setSaving(true);
     try {
       await updateFavorite(service.idServico || id, previous);
-      try {
-        setSaved(await favoriteStatus(service.idServico || id));
-      } catch {
-        setSaved(false);
-      }
       notify(
         previous ? 'Removido dos favoritos' : 'Serviço salvo',
         previous ? 'Removido com sucesso.' : 'Acesse pela página Favoritos.',
         previous ? 'info' : 'success'
       );
     } catch (err) {
+      try {
+        setSaved(await favoriteStatus(service.idServico || id));
+      } catch {
+        setSaved(previous);
+      }
       notify('Erro nos favoritos', err.message || 'Não foi possível atualizar.', 'info');
     } finally {
       setSaving(false);
@@ -300,7 +301,7 @@ export default function ServiceDetailPage() {
                   {proposal ? 'Enviar proposta' : 'Continuar contratação'}
                 </Button>
                 <div className="mt-2.5 flex gap-2">
-                  <Button appearance="custom" onClick={favorite} disabled={saving} aria-pressed={saved} className={secondary}>
+                  <Button appearance="custom" onClick={favorite} aria-busy={saving} aria-pressed={saved} className={secondary}>
                     <i aria-hidden="true" className={`${saved ? 'fas text-[#be123c] dark:text-[#fda4af]' : 'far'} fa-heart`} />
                     {saved ? 'Salvo' : 'Salvar'}
                   </Button>
@@ -393,10 +394,12 @@ export default function ServiceDetailPage() {
             role="status"
             className="pointer-events-none fixed right-6 bottom-6 z-[12000] flex w-[min(360px,calc(100%-32px))] items-center gap-3.5 rounded-lg border border-workly-rule bg-workly-card px-4 py-3.5 text-workly-ink-warm shadow-[0_12px_32px_rgba(22,33,27,0.14)]"
           >
-            <i
+            <span
               aria-hidden="true"
-              className={`fas ${toast.type === 'success' ? 'fa-check' : 'fa-info'} grid h-9 w-9 shrink-0 place-items-center rounded-full bg-workly-primary-tint text-workly-primary-ink`}
-            />
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-workly-primary-tint text-workly-primary-ink dark:bg-workly-dark-accent/10 dark:text-workly-dark-accent"
+            >
+              <i className={`fas ${toast.type === 'success' ? 'fa-check' : 'fa-info'} text-sm`} />
+            </span>
             <div>
               <strong className="block text-[0.95rem] font-semibold">{toast.title}</strong>
               <span className="mt-0.5 block text-sm leading-snug text-workly-muted-warm">{toast.message}</span>

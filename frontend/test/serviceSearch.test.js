@@ -6,7 +6,8 @@ import {
   serviceSearchTitle,
   searchServices,
   searchServicePage,
-  servicePageNumber
+  servicePageNumber,
+  paginationItems
 } from '../src/services/serviceSearchService.js';
 
 test('service search preserves URL aliases, requested page and select choices', () => {
@@ -65,4 +66,18 @@ test('service search uses GET, official envelope and API errors', async (t) => {
     message: 'Erro ao buscar serviços.',
     status: 500
   });
+});
+
+test('pagination shows 1 2 3 at the edges, neighbours in the middle and gaps for two or more pages', () => {
+  assert.deepEqual(paginationItems(1, 1), [1]);
+  assert.deepEqual(paginationItems(1, 2), [1, 2]);
+  assert.deepEqual(paginationItems(1, 4), [1, 2, 3, 4]);
+  assert.deepEqual(paginationItems(1, 7), [1, 2, 3, 'gap-end', 7]);
+  assert.deepEqual(paginationItems(1, 52), [1, 2, 3, 'gap-end', 52]);
+  assert.deepEqual(paginationItems(2, 52), [1, 2, 3, 'gap-end', 52]);
+  assert.deepEqual(paginationItems(3, 52), [1, 2, 3, 4, 'gap-end', 52]);
+  assert.deepEqual(paginationItems(4, 52), [1, 2, 3, 4, 5, 'gap-end', 52]);
+  assert.deepEqual(paginationItems(20, 52), [1, 'gap-start', 19, 20, 21, 'gap-end', 52]);
+  assert.deepEqual(paginationItems(51, 52), [1, 'gap-start', 50, 51, 52]);
+  assert.deepEqual(paginationItems(52, 52), [1, 'gap-start', 50, 51, 52]);
 });

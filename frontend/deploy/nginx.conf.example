@@ -1,26 +1,38 @@
-# Example only: no production hosting provider is configured in this repository.
-# Replace API_UPSTREAM with the deployment's API origin and set the document root.
-# The API must list this nginx's address in TRUST_PROXY (backend/.env.example) to see client IPs.
-# If another proxy or CDN sits in front of nginx, configure ngx_http_realip_module for it first,
-# so $remote_addr is the real client and not that proxy.
+# Exemplo: troque API_UPSTREAM pelo endereço da API e ajuste o root.
 server {
     listen 80;
     root /srv/workly/dist;
     index index.html;
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
     location /api/ {
         proxy_pass API_UPSTREAM;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # overwrite, never append: a client-supplied X-Forwarded-For must not reach the API.
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Real-IP $remote_addr;
     }
     location /uploads/ {
         proxy_pass API_UPSTREAM;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
     }
-    location /react-assets/ { try_files $uri =404; }
-    location /assets/ { try_files $uri =404; }
-    location /vendor/ { try_files $uri =404; }
-    location / { try_files $uri $uri/ /index.html; }
+    location /react-assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+    location /assets/ {
+        add_header Cache-Control "public, max-age=604800";
+        try_files $uri =404;
+    }
+    location /vendor/ {
+        add_header Cache-Control "public, max-age=604800";
+        try_files $uri =404;
+    }
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ /index.html;
+    }
 }

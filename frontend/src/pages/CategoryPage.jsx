@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import CatalogShell from '../components/catalog/CatalogShell';
 import ServiceCard from '../components/catalog/ServiceCard';
+import ServiceCardSkeleton from '../components/catalog/ServiceCardSkeleton';
 import Pagination from '../components/catalog/Pagination';
-import { LoadingState, StatePanel } from '../components/ui/Feedback';
+import { StatePanel } from '../components/ui/Feedback';
 import { buttonStyles } from '../components/ui/Button';
 import { assignCovers } from '../components/home/offices';
 import { categories, categoryServicePage } from '../services/catalogService';
@@ -77,7 +78,7 @@ export default function CategoryPage() {
               message="Tente novamente em instantes."
             />
           ) : !services ? (
-            <LoadingState message="Carregando serviços…" className="col-span-full" />
+            <ServiceCardSkeleton />
           ) : !services.length ? (
             <StatePanel
               icon="fa-briefcase"

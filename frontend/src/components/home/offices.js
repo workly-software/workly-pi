@@ -15,8 +15,8 @@ export const offices = categories.map((category) => {
   return {
     ...category,
     label: category.label,
-    photo: `${base}.jpg`,
-    covers: [`${base}.jpg`, `${base}-2.jpg`, `${base}-3.jpg`]
+    photo: `${base}.webp`,
+    covers: [`${base}.webp`, `${base}-2.webp`, `${base}-3.webp`]
   };
 });
 

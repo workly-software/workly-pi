@@ -98,7 +98,7 @@ export default function RegisterPage() {
             <div className="order-2 col-span-12 self-start lg:sticky lg:top-8 lg:order-none lg:col-span-5">
               <figure className="relative overflow-hidden rounded-xl bg-workly-sunken legacy-max-992:hidden">
                 <img
-                  src="/assets/img/oficios/design.jpg"
+                  src="/assets/img/oficios/design.webp"
                   alt="Mesa de trabalho de designer com esboços e paleta de cores"
                   className="aspect-[4/3] w-full object-cover"
                 />

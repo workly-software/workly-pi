@@ -1,9 +1,4 @@
-export function LoadingState({
-  message = 'Carregando dados da Workly...',
-  detail = 'Preparando as informações para você.',
-  inline = false,
-  className = ''
-}) {
+export function LoadingState({ message = 'Carregando…', detail = '', inline = false, className = '' }) {
   if (inline)
     return (
       <span role="status" aria-live="polite" className={className}>
@@ -14,14 +9,21 @@ export function LoadingState({
     <div
       role="status"
       aria-live="polite"
-      className={`mx-auto my-5 grid w-full max-w-[460px] place-items-center gap-2.5 rounded-lg border border-[rgba(120,112,96,0.18)] bg-workly-card/78 px-[26px] py-[30px] text-center text-workly-ink-warm shadow-[0_1px_2px_rgba(22,33,27,0.05)] dark:border-[rgba(170,180,172,0.18)] dark:bg-workly-night-raised dark:text-workly-dark-text ${className}`}
+      className={`mx-auto grid w-full place-items-center gap-4 py-16 text-center motion-safe:animate-workly-late-in ${className}`}
     >
-      <span
-        aria-hidden="true"
-        className="h-[42px] w-[42px] animate-workly-spin rounded-full border-4 border-[rgba(4,191,85,0.16)] border-t-workly-primary motion-reduce:animate-none"
-      />
-      <strong>{message}</strong>
-      {detail && <small className="text-workly-muted-warm dark:text-[#9aa59f]">{detail}</small>}
+      <span aria-hidden="true" className="flex items-center gap-1.5">
+        {[0, 150, 300].map((delay) => (
+          <span
+            key={delay}
+            style={{ animationDelay: `${delay}ms` }}
+            className="h-2.5 w-2.5 rounded-full bg-workly-forest motion-safe:animate-workly-dot dark:bg-workly-dark-accent"
+          />
+        ))}
+      </span>
+      <p className="text-[0.95rem] font-medium text-workly-muted-warm dark:text-workly-dark-text-muted">
+        {message}
+      </p>
+      {detail && <p className="-mt-2 text-sm text-workly-muted-warm dark:text-workly-dark-text-muted">{detail}</p>}
     </div>
   );
 }

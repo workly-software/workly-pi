@@ -6,6 +6,21 @@ export function servicePageNumber(value) {
   return Number.isSafeInteger(number) && number > 0 ? number : 1;
 }
 
+export function paginationItems(page, totalPages) {
+  const shown = new Set([1, totalPages, page - 1, page, page + 1]);
+  if (page <= 2) [2, 3].forEach((n) => shown.add(n));
+  if (page >= totalPages - 1) [totalPages - 2, totalPages - 1].forEach((n) => shown.add(n));
+  const pages = [...shown].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
+  const items = [];
+  for (const n of pages) {
+    const previous = items.length ? pages[pages.indexOf(n) - 1] : n - 1;
+    if (n - previous === 2) items.push(n - 1);
+    else if (n - previous > 2) items.push(n < page ? 'gap-start' : 'gap-end');
+    items.push(n);
+  }
+  return items;
+}
+
 export function readServiceFilters(params) {
   const select = (value, choices) => (choices.includes(value) ? value : '');
   return {

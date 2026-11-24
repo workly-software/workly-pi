@@ -55,7 +55,7 @@ export default function LoginPage() {
         <div className="mx-auto grid w-[960px] max-w-full overflow-hidden rounded-2xl border border-workly-rule bg-workly-card md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] dark:border-white/10 dark:bg-workly-night-raised">
           <figure className="relative hidden min-h-[560px] md:block">
             <img
-              src="/assets/img/oficios/fotografia.jpg"
+              src="/assets/img/oficios/fotografia.webp"
               alt="Câmera fotográfica sobre a mesa de trabalho"
               className="absolute inset-0 h-full w-full object-cover"
             />

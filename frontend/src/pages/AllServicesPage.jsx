@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import CatalogShell from '../components/catalog/CatalogShell';
 import ServiceCard from '../components/catalog/ServiceCard';
+import ServiceCardSkeleton from '../components/catalog/ServiceCardSkeleton';
 import ServiceFilters from '../components/catalog/ServiceFilters';
 import Pagination from '../components/catalog/Pagination';
-import { LoadingState, StatePanel } from '../components/ui/Feedback';
+import { StatePanel } from '../components/ui/Feedback';
 import Button from '../components/ui/Button';
 import { assignCovers } from '../components/home/offices';
 import {
@@ -98,7 +99,9 @@ export default function AllServicesPage() {
             }
           />
         ) : !services ? (
-          <LoadingState message="Carregando serviços…" />
+          <div className="grid gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+            <ServiceCardSkeleton />
+          </div>
         ) : !services.length ? (
           <StatePanel
             icon="fa-search"
